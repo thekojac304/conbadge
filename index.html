@@ -96,6 +96,7 @@
      with no visible gear button at all. */
   body.mode-play #tools{ display:none; }
   body.mode-play #corner-hint{ display:block; }
+  #trail{ position:fixed; inset:0; z-index:4; pointer-events:none; }
   #corner-hint{ display:none; position:fixed; z-index:6; left:0; top:0; width:64px; height:64px;
                 pointer-events:none; }
   #corner-hint::after{ content:""; position:absolute; left:14px; top:calc(14px + env(safe-area-inset-top));
@@ -274,6 +275,9 @@
 
   <!-- Play-mode exit (revealed by tapping the top-left corner) -->
   <button id="play-exit">✕ Exit play mode</button>
+
+  <!-- Swipe trail overlay (2D, drawn only while petting) -->
+  <canvas id="trail"></canvas>
 
   <!-- Play-mode escape hotspot indicator -->
   <div id="corner-hint"></div>

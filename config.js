@@ -1,6 +1,6 @@
 // Con Badge — tuning constants and the touch-zone map.
 export const CONFIG = {
-  BUILD: 'b33',            // bump on each new version — shown in the load readout
+  BUILD: 'b34',            // bump on each new version — shown in the load readout
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
   ORBIT_AZIMUTH: 0.62,     // rad: how far left/right you can orbit (clamped both ways)
   ORBIT_POLAR_LO: 1.12,    // rad from +Y: how far you can look down over the top
@@ -42,6 +42,9 @@ export const CONFIG = {
   PET_GAIN: 4.5,           // how fast petting builds up (higher = more sensitive)
   PET_DECAY: 1.6,          // how fast it fades once you stop
   HEART_RATE: 0.16,       // seconds between hearts while petting
+  TRAIL_LIFE: 0.45,        // seconds a swipe-trail point stays visible
+  TRAIL_WIDTH: 14,         // widest point of the trail, in CSS pixels
+  TRAIL_COLOR: '255,150,190',   // rgb triple for the trail stroke
   PET_EYES: 0.42,          // how far the eyes soften when petted (lower if lids clip)        // seconds between hearts while petting
   SHAKE_THRESHOLD: 14,     // m/s² of jolt needed to trigger dizzy (lower = more sensitive)
   SHAKE_COOLDOWN: 3000,    // ms before another shake can register

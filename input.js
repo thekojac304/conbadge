@@ -5,6 +5,63 @@ import { CONFIG, TOUCH_ZONES } from './config.js';
 import { anchorWorld, raycaster, ndc } from './pose.js';
 import { reactions, petting } from './anim.js';
 
+/* ---------------------------------------------------------------------------
+   Swipe trail — a soft tapering streak following the finger while petting.
+   Drawn on a 2D overlay canvas rather than in the 3D scene: it's a UI flourish
+   that belongs on the glass, not in the world, and it costs almost nothing.
+--------------------------------------------------------------------------- */
+const trailCanvas = document.getElementById('trail');
+const tctx = trailCanvas ? trailCanvas.getContext('2d') : null;
+const trail = [];                 // newest last: {x, y, life}
+const TRAIL_MAX = 64;
+
+function trailResize(){
+  if(!trailCanvas) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  trailCanvas.width  = Math.floor(window.innerWidth  * dpr);
+  trailCanvas.height = Math.floor(window.innerHeight * dpr);
+  trailCanvas.style.width  = window.innerWidth  + 'px';
+  trailCanvas.style.height = window.innerHeight + 'px';
+  tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+if (trailCanvas){ trailResize(); window.addEventListener('resize', trailResize); }
+
+function addTrailPoint(x, y){
+  trail.push({ x, y, life: CONFIG.TRAIL_LIFE });
+  if (trail.length > TRAIL_MAX) trail.shift();
+}
+
+function updateTrail(dt){
+  if(!tctx) return;
+  tctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+  if(!trail.length) return;
+
+  for (let i = trail.length - 1; i >= 0; i--){
+    trail[i].life -= dt;
+    if (trail[i].life <= 0) trail.splice(i, 1);
+  }
+  if (trail.length < 2) return;
+
+  tctx.lineCap = 'round';
+  tctx.lineJoin = 'round';
+  tctx.shadowColor = `rgba(${CONFIG.TRAIL_COLOR},0.55)`;
+  tctx.shadowBlur = 12;
+  // Segment by segment, so the stroke can fade with age AND taper toward the
+  // tail — a single path can only carry one width and one alpha.
+  for (let i = 1; i < trail.length; i++){
+    const a = trail[i-1], b = trail[i];
+    const age  = Math.max(a.life, b.life) / CONFIG.TRAIL_LIFE;   // 1 = fresh
+    const near = i / trail.length;                               // 1 = at the finger
+    tctx.strokeStyle = `rgba(${CONFIG.TRAIL_COLOR},${0.5 * age * age})`;
+    tctx.lineWidth = Math.max(1.5, CONFIG.TRAIL_WIDTH * age * (0.35 + 0.65*near));
+    tctx.beginPath();
+    tctx.moveTo(a.x, a.y);
+    tctx.lineTo(b.x, b.y);
+    tctx.stroke();
+  }
+  tctx.shadowBlur = 0;
+}
+
 let zoneDots = null;
 function updateZoneDebug(){
   if (!CONFIG.ZONE_DEBUG){ if(zoneDots){ scene.remove(zoneDots); zoneDots=null; } return; }
@@ -131,6 +188,7 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
         petting.feed(step, pick.point, pick.zone);
         pDown.petted = true;
         S.lastInteract = performance.now();
+        if (settings.particles !== false) addTrailPoint(ev.clientX, ev.clientY);
       }
     }
     pDown.lastX = ev.clientX; pDown.lastY = ev.clientY;
@@ -176,4 +234,4 @@ function cancelLong(){
    composite rotation — that's what was rolling the palm during waves.
    After calling this, Z is measured from horizontal and mirrors with `m`. */
 
-export { pickZone, reactAt, updateZoneDebug, exitPlayMode, showExitChip, hideExitChip };
+export { pickZone, reactAt, updateZoneDebug, updateTrail, exitPlayMode, showExitChip, hideExitChip };

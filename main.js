@@ -6,7 +6,7 @@ import { pose, flushExpr } from './pose.js';
 import { idle, gestures, reactions, petting, particles, applyTailPose, applyEarPose,
          decayImpulses, applyHipsDrop } from './anim.js';
 import { clampCameraTarget, applyView, updateParallax, renderScene } from './camera.js';
-import { updateZoneDebug } from './input.js';
+import { updateZoneDebug, updateTrail } from './input.js';
 import { mountVRM } from './avatar.js';
 import { applySettings, applyCamLock, syncFullscreenClass, acquireWake, motionNote, els } from './ui.js';
 
@@ -46,6 +46,7 @@ function loop(){
   }
   if (CONFIG.ZONE_DEBUG) updateZoneDebug();
   particles.update(dt);
+  updateTrail(dt);
   updateParallax(dt);
   renderScene();
 }
