@@ -100,6 +100,22 @@
                 pointer-events:none; }
   #corner-hint::after{ content:""; position:absolute; left:14px; top:calc(14px + env(safe-area-inset-top));
                 width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.10); }
+  /* Animation test bar — non-modal so you can watch the result while poking it */
+  #test-bar{ position:fixed; z-index:7; left:0; right:0;
+             bottom:max(10px, env(safe-area-inset-bottom));
+             display:none; padding:0 10px; }
+  #test-bar.show{ display:block; }
+  body.mode-play #test-bar{ display:none !important; }
+  #test-chips{ display:flex; gap:7px; overflow-x:auto; padding:9px 4px;
+               scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+  #test-chips::-webkit-scrollbar{ display:none; }
+  .chip{ flex:none; padding:9px 13px; border-radius:11px; font-size:13px; font-weight:600;
+         border:1px solid var(--stroke); background:var(--sheet); color:var(--ink);
+         backdrop-filter:blur(8px); cursor:pointer; white-space:nowrap; }
+  .chip:active{ transform:scale(.94); }
+  .chip.react{ border-color:rgba(111,227,196,.45); color:var(--accent); }
+  .chip.stop{ border-color:rgba(255,139,139,.5); color:var(--danger); }
+
   /* Exit chip: hidden until you tap the top-left corner in play mode */
   #play-exit{ position:fixed; z-index:8; left:12px; top:calc(12px + env(safe-area-inset-top));
               display:none; padding:11px 16px; border-radius:12px; cursor:pointer;
@@ -247,10 +263,14 @@
   <!-- Corner tools -->
   <div id="tools">
     <button class="tool" id="btn-fs"    title="Fullscreen" aria-label="Fullscreen">⛶</button>
+    <button class="tool" id="btn-test"  title="Test animations" aria-label="Test animations">🎬</button>
     <button class="tool" id="btn-lock"  title="Lock camera" aria-label="Lock camera">🔓</button>
     <button class="tool" id="btn-mode"  title="Play mode"  aria-label="Play mode">▶</button>
     <button class="tool" id="btn-gear"  title="Settings"   aria-label="Settings">⚙</button>
   </div>
+
+  <!-- Animation test bar (setup mode only) -->
+  <div id="test-bar"><div id="test-chips"></div></div>
 
   <!-- Play-mode exit (revealed by tapping the top-left corner) -->
   <button id="play-exit">✕ Exit play mode</button>
@@ -432,7 +452,7 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
    CONFIG — the knobs you'll actually tune per avatar
    =========================================================================== */
 const CONFIG = {
-  BUILD: 'b19',            // bump on each new version — shown in the load readout
+  BUILD: 'b20',            // bump on each new version — shown in the load readout
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
   ORBIT_AZIMUTH: 0.62,     // rad: how far left/right you can orbit (clamped both ways)
   ORBIT_POLAR_LO: 1.12,    // rad from +Y: how far you can look down over the top
@@ -448,10 +468,11 @@ const CONFIG = {
   BOUNCE_AMOUNT: 0.17,     // extra knee flex at the bottom of each bounce
   HIP_DROP: 0.55,          // how much the hips sink with the knees (0 = no sink)
   EYE_GAIN: 0.45,          // how far the eye bones rotate when looking around (0 = off)
-  WAVE_RAISE: 0.15,        // upper arm just above horizontal (higher = paw nearer the face)
+  WAVE_RAISE: 0.32,        // upper-arm angle ABOVE HORIZONTAL during a wave (absolute now)
   WAVE_FORWARD: 0.28,      // slight forward angle so the wave isn't dead flat to the side
   WAVE_ELBOW: 1.45,        // elbow fold (Z) — holds the forearm ~upright
   WAVE_WAGGLE: 0.55,       // wrist sweep amplitude (the actual waving motion)
+  STRETCH_RAISE: 1.85,     // arms-overhead angle above horizontal (~106°)
   SCRATCH_SIDE: 0.26,      // extra clearance outside the head (× hips→head span)
   SCRATCH_PAW: 0.34,       // paw length as a fraction of forearm — keeps fingers out of the head
   SCRATCH_PALM: 1.25,      // forearm twist so the palm faces the head (negate to flip)
@@ -1328,37 +1349,41 @@ const GESTURES = {
   // paw between the face and a straight arm. The forearm holds ~upright and
   // only tips slightly; the hand does the actual waving.
   wave(t,d){ const e=envelope(t,d); const s=Math.sin(t*7);
-    const A=CONFIG.ARM_DOWN, W=CONFIG.WAVE_WAGGLE;
-    pose.add('rightUpperArm', 0, CONFIG.WAVE_FORWARD*e, (A+CONFIG.WAVE_RAISE)*e);
+    const W=CONFIG.WAVE_WAGGLE;
+    armBase('right', e);                                                // clean slate
+    pose.add('rightUpperArm', 0, CONFIG.WAVE_FORWARD*e, CONFIG.WAVE_RAISE*e);
     pose.add('rightLowerArm', 0, 0, (CONFIG.WAVE_ELBOW + s*W*0.35)*e);  // upright, slight tip
     pose.add('rightHand',     0, 0, (s*W)*e);                           // wrist does the wave
   },
   // A real stretch isn't symmetric and isn't a hold — the arms lead with bent
-  // elbows, unfold at the top, arrive slightly apart in time, the spine arches,
-  // and everything drops loose. Each arm gets its own offset envelope.
+  // elbows, unfold near the top, and arrive slightly apart in time.
+  // NOTE: raising an arm SUBTRACTS on the left and ADDS on the right, hence the
+  // `m` mirror. Getting that backwards swings the arm through the body.
   stretch(t,d){
     const armE = (off)=> envelope(Math.max(0, t-off), d-off, 0.34, 0.30);
-    const eL = armE(0.0), eR = armE(0.22);          // right arm lags behind left
-    const A=CONFIG.ARM_DOWN;
-    // elbows are folded early in the rise and unfold near the top
-    const unfoldL = Math.max(0, 1 - eL*1.6), unfoldR = Math.max(0, 1 - eR*1.6);
-    const swayT = Math.sin(t*1.7);
-
-    pose.add('leftUpperArm',  0, -0.10*eL, (A+0.80)*eL + swayT*0.05*eL);
-    pose.add('rightUpperArm', 0,  0.10*eR, -(A+0.80)*eR - swayT*0.05*eR);
-    pose.add('leftLowerArm',  0, -(0.85*unfoldL + 0.12)*eL, 0);
-    pose.add('rightLowerArm', 0,  (0.85*unfoldR + 0.12)*eR, 0);
-    pose.add('leftHand',  0, -0.15*eL, 0);
-    pose.add('rightHand', 0,  0.15*eR, 0);
+    const sway = Math.sin(t*1.7);
+    const doArm = (side, e)=>{
+      if (e <= 0.001) return;
+      const m = side==='left' ? -1 : 1;
+      armBase(side, e);                                   // clean slate
+      const unfold = Math.max(0, 1 - e*1.6);              // elbows open near the top
+      const up = side==='left' ? 'leftUpperArm' : 'rightUpperArm';
+      const lo = side==='left' ? 'leftLowerArm' : 'rightLowerArm';
+      const hd = side==='left' ? 'leftHand'     : 'rightHand';
+      pose.add(up, 0, m*(-0.08)*e, m*(CONFIG.STRETCH_RAISE + sway*0.05)*e);
+      pose.add(lo, 0, 0, m*(0.95*unfold + 0.10)*e);
+      pose.add(hd, 0, 0, m*0.14*e);
+    };
+    doArm('left',  armE(0.0));
+    doArm('right', armE(0.22));                           // right lags behind
 
     // body follows: arch back, rise slightly, head tips up then relaxes
     const body = envelope(t, d, 0.3, 0.32);
-    pose.add('spine', -0.14*body, swayT*0.03*body, 0);
+    pose.add('spine', -0.14*body, sway*0.03*body, 0);
     pose.add('chest', -0.11*body, 0, 0);
     pose.add('neck',  -0.08*body, 0, 0);
-    pose.add('head',  -0.13*body, swayT*0.05*body, 0);
+    pose.add('head',  -0.13*body, sway*0.05*body, 0);
     gestureHips = Math.max(gestureHips, 0.03*rig.legLength*body);
-    // knees straighten a touch as he reaches up
     pose.add('leftLowerLeg',  -0.10*body, 0, 0);
     pose.add('rightLowerLeg', -0.10*body, 0, 0);
     setExpr('smileEyes', 0.35*body);
@@ -1690,14 +1715,16 @@ const reactions = {
       if (vrm){ const sx=1+0.05*p, sy=1-0.07*p; vrm.scene.scale.set(sx, sy, sx); }
     }
     else if (this.kind==='wave'){
-      const A=CONFIG.ARM_DOWN, W=CONFIG.WAVE_WAGGLE;
+      const W=CONFIG.WAVE_WAGGLE;
       const L = this.side==='left';
+      const side = L ? 'left' : 'right';
       const arm  = L ? 'leftUpperArm' : 'rightUpperArm';
       const fore = L ? 'leftLowerArm' : 'rightLowerArm';
       const hand = L ? 'leftHand'     : 'rightHand';
-      const m  = L ? -1 : 1;                  // Y and Z mirror for the left arm
+      const m  = L ? -1 : 1;
       const s = Math.sin(t*8);
-      pose.add(arm,  0, m*CONFIG.WAVE_FORWARD*e, m*(A+CONFIG.WAVE_RAISE)*e);
+      armBase(side, e);                                    // clean slate
+      pose.add(arm,  0, m*CONFIG.WAVE_FORWARD*e, m*CONFIG.WAVE_RAISE*e);
       pose.add(fore, 0, 0, m*(CONFIG.WAVE_ELBOW + s*W*0.35)*e);
       pose.add(hand, 0, 0, m*(s*W)*e);
       setExpr('happy', 0.5*e);
@@ -1943,6 +1970,20 @@ function cancelLong(){
   if(cornerTimer){ clearTimeout(cornerTimer); cornerTimer=null; }
 }
 
+/* Neutralise the idle resting arm pose for one side, so a gesture can specify
+   absolute arm angles instead of inheriting the rest pose's forward swing and
+   elbow bend. Summing an idle Y-bend with a gesture's Z-fold produces a twisted
+   composite rotation — that's what was rolling the palm during waves.
+   After calling this, Z is measured from horizontal and mirrors with `m`. */
+function armBase(side, w){
+  const m = side==='left' ? -1 : 1;
+  const A=CONFIG.ARM_DOWN, O=CONFIG.ARM_OUT, E=CONFIG.ELBOW_BEND, F=CONFIG.ARM_FORWARD;
+  const up = side==='left' ? 'leftUpperArm' : 'rightUpperArm';
+  const lo = side==='left' ? 'leftLowerArm' : 'rightLowerArm';
+  pose.add(up, 0, -m*F*w, m*(A - O)*w);   // cancel forward swing + resting droop
+  pose.add(lo, 0, -m*E*w, 0);             // cancel resting elbow bend
+}
+
 /* ---------------------------------------------------------------------------
    Two-bone arm IK. Given a world-space target, solve the shoulder and elbow
    angles that actually put the paw there, using the avatar's measured bone
@@ -2173,6 +2214,48 @@ const BG_PRESETS = [
     const b = e.target.closest('.preset'); if(!b) return;
     const [a,c] = BG_PRESETS[+b.dataset.i];
     settings.bgA=a; settings.bgB=c; applySettings(); saveSettings();
+  });
+})();
+
+/* ---- Animation test bar -------------------------------------------------
+   Idle gestures fire every 8–20s, which makes verifying a fix agonising. This
+   triggers any gesture or reaction on demand. Setup mode only. */
+(function(){
+  const bar = document.getElementById('test-bar');
+  const box = document.getElementById('test-chips');
+  const REACTS = [
+    ['Pat','happy'], ['Blush','blush'], ['Giggle','giggle'],
+    ['Belly','bellyRub'], ['Startle','fluster'], ['Dizzy','dizzy'],
+    ['Wave R','wave:right'], ['Wave L','wave:left'],
+  ];
+  let html = '<button class="chip stop" data-stop="1">■ Stop</button>';
+  html += GESTURE_LIST.map(g=>`<button class="chip" data-g="${g}">${g}</button>`).join('');
+  html += REACTS.map(([label,kind])=>`<button class="chip react" data-r="${kind}">${label}</button>`).join('');
+  box.innerHTML = html;
+
+  box.addEventListener('click', e=>{
+    const b = e.target.closest('.chip'); if(!b) return;
+    if (b.dataset.stop){
+      gestures.cur = null; gestures.gainTarget = 1; gestures.next = rand(8,20);
+      reactions.clear();
+      toast('Stopped', 1200);
+      return;
+    }
+    if (b.dataset.g){
+      reactions.clear();
+      gestures.start(b.dataset.g);
+      gestures.gain = 1; gestures.gainTarget = 1;   // skip the fade-in for testing
+      toast(b.dataset.g, 1500);
+    }
+    if (b.dataset.r){
+      const [kind, side] = b.dataset.r.split(':');
+      reactions.fire(kind, side);
+      toast(kind + (side ? ' ('+side+')' : ''), 1500);
+    }
+  });
+
+  document.getElementById('btn-test').addEventListener('click', ()=>{
+    bar.classList.toggle('show');
   });
 })();
 
