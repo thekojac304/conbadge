@@ -158,7 +158,7 @@ const GESTURES = {
   // motion lives in the WRIST — otherwise oscillating the fold just swings the
   // paw between the face and a straight arm. The forearm holds ~upright and
   // only tips slightly; the hand does the actual waving.
-  wave(t,d){ const e=envelope(t,d); const s=Math.sin(t*7);
+  wave(t,d){ const e=envelope(t,d,0.12); const s=Math.sin(t*7);   // ein 0.2->0.12: 0.52s->0.31s to raise the arm
     const W=CONFIG.WAVE_WAGGLE, P=CONFIG.WAVE_PALM;
     armBase('right', e);                                                // clean slate
     pose.add('rightUpperArm', 0, CONFIG.WAVE_FORWARD*e, CONFIG.WAVE_RAISE*e);
@@ -174,7 +174,8 @@ const GESTURES = {
   // NOTE: raising an arm SUBTRACTS on the left and ADDS on the right, hence the
   // `m` mirror. Getting that backwards swings the arm through the body.
   stretch(t,d){
-    const armE = (off)=> envelope(Math.max(0, t-off), d-off, 0.34, 0.30);
+    // ein trimmed 0.34->0.15: the arms used to take 1.36s to unfold — now ~0.6s.
+    const armE = (off)=> envelope(Math.max(0, t-off), d-off, 0.15, 0.30);
     const sway = Math.sin(t*1.7);
     const doArm = (side, e)=>{
       if (e <= 0.001) return;
@@ -202,7 +203,7 @@ const GESTURES = {
     pose.add('rightLowerLeg', -0.10*body, 0, 0);
     setExpr('smileEyes', 0.35*body);
   },
-  footShuffle(t,d){ const e=envelope(t,d); const s=Math.sin(t*3.0);
+  footShuffle(t,d){ const e=envelope(t,d,0.15); const s=Math.sin(t*3.0);  // ein default 0.2->0.15: 0.68s->0.51s
     const up = Math.max(0,s), dn = Math.max(0,-s);
     pose.add('hips', 0, s*0.05*e, s*0.06*e);            // weight shifts side to side
     // each step lifts the thigh, folds the knee, and lands the foot flat
@@ -214,17 +215,17 @@ const GESTURES = {
     pose.add('leftFoot',      -dn*0.22*e, 0, 0);
     pose.add('spine', 0, s*0.03*e, 0);
   },
-  lookAround(t,d){ const e=envelope(t,d,0.3,0.3); const s=Math.sin(t*1.4);
+  lookAround(t,d){ const e=envelope(t,d,0.15,0.3); const s=Math.sin(t*1.4);  // ein 0.3->0.15: 1.08s->0.54s
     pose.add('neck',0, s*0.5*e, 0); pose.add('head',0, s*0.35*e, s*0.08*e);
     pose.add('chest',0, s*0.12*e, 0);
   },
-  headTilt(t,d){ const e=envelope(t,d,0.35,0.4);
+  headTilt(t,d){ const e=envelope(t,d,0.18,0.4);     // ein 0.35->0.18: 0.91s->0.47s to tilt
     pose.add('head',0,0.05*e, 0.5*e); pose.add('neck',0,0,0.22*e);
   },
 
   // Head scratch: the paw position is SOLVED (see armReach) so it lands beside
   // the ear on any avatar, instead of relying on angles tuned to one rig.
-  scratchHead(t,d){ const e=envelope(t,d,0.28,0.3); const s=Math.sin(t*15);
+  scratchHead(t,d){ const e=envelope(t,d,0.16,0.3); const s=Math.sin(t*15);  // ein 0.28->0.16: 0.84s->0.48s
     const tgt = scratchTarget();
     if (tgt && armReach('right', tgt, e)){
       // Twist the forearm so the PALM faces the head — rotating about the bone's
@@ -256,7 +257,7 @@ const GESTURES = {
   },
 
   // Shift weight onto one hip and settle — a casual standing reset.
-  weightShift(t,d){ const e=envelope(t,d,0.4,0.4);
+  weightShift(t,d){ const e=envelope(t,d,0.15,0.4);  // ein 0.4->0.15: 1.6s->0.6s, was glacial
     pose.add('hips',  0, 0.09*e, 0.12*e);
     pose.add('spine', 0,-0.04*e,-0.07*e);
     pose.add('chest', 0, 0,      -0.05*e);
@@ -266,7 +267,7 @@ const GESTURES = {
   },
 
   // Dip the muzzle and take a couple of quick sniffs.
-  sniff(t,d){ const e=envelope(t,d,0.22,0.3); const n=Math.sin(t*11);
+  sniff(t,d){ const e=envelope(t,d,0.16,0.3); const n=Math.sin(t*11);  // ein 0.22->0.16: 0.57s->0.42s
     pose.add('head', (0.20 + n*0.045)*e, 0.06*e, 0);
     pose.add('neck', 0.11*e, 0.04*e, 0);
     pose.add('chest', 0.04*e, 0, 0);
@@ -274,14 +275,14 @@ const GESTURES = {
   },
 
   // Lazy tail swish with a small counter-balance in the hips.
-  tailSwish(t,d){ const e=envelope(t,d,0.3,0.35);
+  tailSwish(t,d){ const e=envelope(t,d,0.15,0.35);   // ein 0.3->0.15: 1.02s->0.51s
     gestureTail = Math.max(gestureTail, 1.0*e);
     pose.add('hips', 0, Math.sin(t*2.2)*0.035*e, 0);
   },
 
   // ---- leg gestures -------------------------------------------------------
   // Lift a hind paw, fold the knee, glance down at it, put it back.
-  pawLift(t,d){ const e=envelope(t,d,0.28,0.32);
+  pawLift(t,d){ const e=envelope(t,d,0.16,0.32);     // ein 0.28->0.16: 0.78s->0.45s
     pose.add('rightUpperLeg', -0.42*e, 0, 0);   // thigh forward
     pose.add('rightLowerLeg',  0.80*e, 0, 0);   // knee folds up
     pose.add('rightFoot',     -0.28*e, 0, 0);
@@ -291,7 +292,7 @@ const GESTURES = {
   },
 
   // Idle toe tapping — one foot, quick repeated taps.
-  toeTap(t,d){ const e=envelope(t,d,0.2,0.25); const s=Math.max(0, Math.sin(t*9));
+  toeTap(t,d){ const e=envelope(t,d,0.15,0.25); const s=Math.max(0, Math.sin(t*9));  // ein 0.2->0.15: 0.6s->0.45s
     pose.add('rightFoot',     -0.40*s*e, 0, 0);
     pose.add('rightLowerLeg',  0.14*s*e, 0, 0);
     pose.add('hips', 0, 0, -0.03*e);
@@ -299,7 +300,7 @@ const GESTURES = {
 
   // Rise onto the toes and settle back — uses the hips channel so the whole
   // body actually lifts rather than just the ankles rotating.
-  heelRaise(t,d){ const e=envelope(t,d,0.32,0.38);
+  heelRaise(t,d){ const e=envelope(t,d,0.18,0.38);   // ein 0.32->0.18: 0.77s->0.43s
     gestureHips = Math.max(gestureHips, 0.055*rig.legLength*e);
     pose.add('leftFoot',  -0.55*e, 0, 0);
     pose.add('rightFoot', -0.55*e, 0, 0);
@@ -309,7 +310,7 @@ const GESTURES = {
   },
 
   // Stretch one leg out and roll the ankle.
-  legStretch(t,d){ const e=envelope(t,d,0.35,0.4); const r=Math.sin(t*3.5);
+  legStretch(t,d){ const e=envelope(t,d,0.16,0.4); const r=Math.sin(t*3.5);  // ein 0.35->0.16: 1.26s->0.58s
     pose.add('leftUpperLeg', -0.38*e, 0, 0);
     pose.add('leftLowerLeg',  0.12*e, 0, 0);
     pose.add('leftFoot',      0.28*e, r*0.18*e, 0);   // ankle circles

@@ -66,13 +66,24 @@ function flushExpr(dt){
   for (const k in morphTarget) morphTarget[k] = 0;
 }
 
-/* ---- easing helpers ---- */
-const easeInOut = t => t<.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2;
+/* ---- easing helpers -----------------------------------------------------
+   ATTACK and RELEASE deliberately use different shapes. A real limb driven by
+   muscle doesn't ease into motion — it accelerates fast right away and only
+   decelerates as it nears the target. The old code used the SAME symmetric
+   ease-in-out for both halves, so an attack spent its first third barely
+   moving (2% of the way in at 10% of attack time) and then had to cover most
+   of the distance in the back half — which reads exactly as a stall followed
+   by a snap, rather than a lift. easeOut fixes that: 19% of the way in at 10%
+   of attack time, 51% by the halfway point. RELEASE keeps the original curve
+   — settling back to idle doesn't have a "catching up" problem, so it wasn't
+   part of what looked wrong. */
+const easeOut   = t => 1 - (1-t)*(1-t);                          // ATTACK: fast start, gentle arrival
+const easeInOut = t => t<.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2;    // RELEASE only, unchanged
 // window envelope: 0 → 1 (ease in over `ein`) → hold → 0 (ease out over `eout`)
 function envelope(t, dur, ein=0.2, eout=0.25){
   if (t<=0||t>=dur) return 0;
   const inT = dur*ein, outT = dur*eout;
-  if (t<inT) return easeInOut(t/inT);
+  if (t<inT) return easeOut(t/inT);
   if (t>dur-outT) return easeInOut((dur-t)/outT);
   return 1;
 }
