@@ -454,7 +454,7 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 
 // Con Badge — tuning constants and the touch-zone map.
 const CONFIG = {
-  BUILD: 'b27',            // bump on each new version — shown in the load readout
+  BUILD: 'b30',            // bump on each new version — shown in the load readout
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
   ORBIT_AZIMUTH: 0.62,     // rad: how far left/right you can orbit (clamped both ways)
   ORBIT_POLAR_LO: 1.12,    // rad from +Y: how far you can look down over the top
@@ -959,6 +959,7 @@ function scratchTarget(){
 --------------------------------------------------------------------------- */
 
 
+
 // Camera framing, saved views, vertical pan clamp, tilt parallax, render pass.
 // skeletonBox lives here so this module never has to import avatar.js.
 
@@ -1143,6 +1144,7 @@ function renderScene(){
 /* ===========================================================================
    Main loop — delta-time, optional 30 fps cap
    =========================================================================== */
+
 
 
 // Idle life, gesture library, tail/ear motion, particles, petting, reactions.
@@ -1862,6 +1864,7 @@ function decayImpulses(dt){
 
 // shake -> dizzy, wired here so core.js never has to import anim.js
 hooks.onShake = ()=> reactions.fire('dizzy');
+
 
 
 // VRM loading: mesh repair, morph-target pruning, rig measurement, diagnostics.
@@ -2832,6 +2835,7 @@ hooks.openSettings   = openSettings;
 hooks.closeSettings  = closeSettings;
 hooks.setMode        = setMode;
 hooks.onAvatarLoaded = ()=>{ if (els.sheet.classList.contains('open')) renderMorphList(); };
+
 
 
 // Entry point: wires the modules together, owns the frame loop and boot sequence.
