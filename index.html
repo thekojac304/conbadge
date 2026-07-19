@@ -456,7 +456,7 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
    CONFIG — the knobs you'll actually tune per avatar
    =========================================================================== */
 const CONFIG = {
-  BUILD: 'b26',            // bump on each new version — shown in the load readout
+  BUILD: 'b27',            // bump on each new version — shown in the load readout
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
   ORBIT_AZIMUTH: 0.62,     // rad: how far left/right you can orbit (clamped both ways)
   ORBIT_POLAR_LO: 1.12,    // rad from +Y: how far you can look down over the top
@@ -497,7 +497,8 @@ const CONFIG = {
   ATTACH_LOOSE: true,      // re-parent unskinned meshes (rigid accessories) to the nearest bone
   PET_GAIN: 4.5,           // how fast petting builds up (higher = more sensitive)
   PET_DECAY: 1.6,          // how fast it fades once you stop
-  HEART_RATE: 0.16,        // seconds between hearts while petting
+  HEART_RATE: 0.16,       // seconds between hearts while petting
+  PET_EYES: 0.42,          // how far the eyes soften when petted (lower if lids clip)        // seconds between hearts while petting
   SHAKE_THRESHOLD: 14,     // m/s² of jolt needed to trigger dizzy (lower = more sensitive)
   SHAKE_COOLDOWN: 3000,    // ms before another shake can register
   TILT_LEAN: 0.55,         // how much he counter-leans when the phone tilts (0 = off)
@@ -1401,7 +1402,10 @@ const idle = {
       this.blinkT += dt;
       const D=CONFIG.BLINK_TIME;
       const w = this.blinkT<D/2 ? (this.blinkT/(D/2)) : (1-(this.blinkT-D/2)/(D/2));
-      setExpr('blink', Math.max(0, Math.min(1, w)) * CONFIG.BLINK_MAX);
+      // scale the blink down while petting: the eyes are already softened, and
+      // stacking a full blink on top pushes the lids through the face
+      const petEase = 1 - Math.min(0.75, petting.energy);
+      setExpr('blink', Math.max(0, Math.min(1, w)) * CONFIG.BLINK_MAX * petEase);
       if (this.blinkT>=D){ this.blinkT=-1; this.blinkIn=rand(2,5); }
     }
   }
@@ -1794,7 +1798,7 @@ const petting = {
     const e = this.energy;
     setExpr('happy',     0.85*e);
     setExpr('smile',     0.80*e);
-    setExpr('smileEyes', 0.75*e);
+    setExpr('smileEyes', CONFIG.PET_EYES*e);
     pose.add('head',  -0.10*e, 0, 0.07*e);              // leans into the hand
     pose.add('neck',  -0.05*e, 0, 0.04*e);
     pose.add('chest', -0.03*e, 0, 0);
