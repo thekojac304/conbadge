@@ -1,3 +1,7 @@
+Created with Claude Opus 4.8.
+
+This was created mainly for my own personal use.  If you don't like how it was made, you're free to not use it.
+
 Con Badge
 
 An interactive digital convention badge. Load a VRM avatar (exported from
