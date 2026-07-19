@@ -446,6 +446,27 @@
   <!-- Hidden file input -->
   <input type="file" id="file" accept=".vrm,model/gltf-binary,application/octet-stream" style="display:none" />
 
+<script>
+  /* Surface any load/runtime error in the on-screen diagnostic box, so the app
+     can be debugged on a phone with no DevTools attached. Must be a classic
+     script placed BEFORE the module so it also catches module load failures. */
+  (function(){
+    function show(txt){
+      var d = document.getElementById('diag');
+      if (!d) { return; }
+      d.style.opacity = '1';
+      d.textContent = txt;
+    }
+    window.addEventListener('error', function(e){
+      var where = (e.filename||'').split('/').pop() + ':' + (e.lineno||'?');
+      show('ERROR ' + (e.message||'') + '\n  at ' + where);
+    }, true);
+    window.addEventListener('unhandledrejection', function(e){
+      var r = e.reason;
+      show('REJECTED ' + ((r && (r.stack || r.message)) || r));
+    });
+  })();
+</script>
 <script type="module" src="./main.js"></script>
 </body>
 </html>
