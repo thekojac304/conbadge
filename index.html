@@ -456,7 +456,7 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
    CONFIG — the knobs you'll actually tune per avatar
    =========================================================================== */
 const CONFIG = {
-  BUILD: 'b25',            // bump on each new version — shown in the load readout
+  BUILD: 'b26',            // bump on each new version — shown in the load readout
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
   ORBIT_AZIMUTH: 0.62,     // rad: how far left/right you can orbit (clamped both ways)
   ORBIT_POLAR_LO: 1.12,    // rad from +Y: how far you can look down over the top
@@ -495,7 +495,7 @@ const CONFIG = {
   SOLID_DEBUG: false,      // paint every mesh a flat bright color (isolates geometry vs material)
   ZONE_DEBUG: false,       // draw a dot at every touch-zone anchor (set true to tune zones)
   ATTACH_LOOSE: true,      // re-parent unskinned meshes (rigid accessories) to the nearest bone
-  PET_GAIN: 2.4,           // how fast petting builds up (higher = more sensitive)
+  PET_GAIN: 4.5,           // how fast petting builds up (higher = more sensitive)
   PET_DECAY: 1.6,          // how fast it fades once you stop
   HEART_RATE: 0.16,        // seconds between hearts while petting
   SHAKE_THRESHOLD: 14,     // m/s² of jolt needed to trigger dizzy (lower = more sensitive)
@@ -697,6 +697,7 @@ const MORPH_PATTERNS = {
   smileEyes: [/closed\s*smile\s*eyes/i, /happy\s*eyes/i, /Fcl_EYE_Joy/i, /squint/i],
   browUp:    [/brow.*(up|raise)/i, /raise.*brow/i, /Fcl_BRW_Surprised/i],
   browDown:  [/concerned\s*eyes/i, /brow.*(down|angry)/i, /Fcl_BRW_Angry/i],
+  tongue:    [/blep/i, /tongue/i, /Fcl_HA_Fun/i],
 };
 const MORPH_MULTI = new Set(['blink']);   // semantics that keep ALL matches
 
@@ -1868,11 +1869,14 @@ const reactions = {
       pose.add('chest',  0.11*e + jolt*0.05, 0.09*e, 0);        // curls away
       pose.add('spine',  0.08*e, 0, 0);
       pose.add('hips',   0.05*e, 0, 0);
-      // arms tuck in toward the body
-      pose.add('leftUpperArm',  0, -0.18*e,  0.22*e);
-      pose.add('rightUpperArm', 0,  0.18*e, -0.22*e);
-      pose.add('leftLowerArm',  0, -0.55*e, 0);
-      pose.add('rightLowerArm', 0,  0.55*e, 0);
+      // Hands come FORWARD to cover, not inward — pulling them toward the
+      // body just buried the arms in the thighs.
+      pose.add('leftUpperArm',  0, -0.55*e, -0.14*e);
+      pose.add('rightUpperArm', 0,  0.55*e,  0.14*e);
+      pose.add('leftLowerArm',  0, -0.75*e, 0);
+      pose.add('rightLowerArm', 0,  0.75*e, 0);
+      pose.add('leftHand',      0, -0.20*e, 0);
+      pose.add('rightHand',     0,  0.20*e, 0);
       // knees pinch together slightly
       pose.add('leftUpperLeg',  0, 0,  0.05*e);
       pose.add('rightUpperLeg', 0, 0, -0.05*e);
@@ -1904,16 +1908,19 @@ const reactions = {
       earImpulse  = Math.max(earImpulse, 0.45*e);
     }
     else if (this.kind==='boop'){
-      // sharp recoil on contact, then a pleased little shake-off
-      const jolt = Math.max(0, 1 - t/0.22);
-      const s2 = Math.sin(t*17);
-      setExpr('surprised', 0.85*jolt + 0.25*e);
-      setExpr('blink',     0.9*Math.max(0, 1 - t/0.16));
-      setExpr('smile',     0.55*e*(1-jolt));
-      setExpr('browUp',    0.6*e);
-      pose.add('head', (0.16*jolt - 0.05*e), s2*0.06*e, 0);   // snaps back, then wiggles
-      pose.add('neck', 0.09*jolt, 0, 0);
-      pose.add('chest', 0.05*jolt, 0, 0);
+      // Recoil eases IN over ~0.18s rather than starting at full amplitude —
+      // an instant peak reads as a violent snap. Gentle pull-back, then a
+      // pleased little wiggle and a blep.
+      const jolt = envelope(t, 0.55, 0.34, 0.55);
+      const s2 = Math.sin(t*13);
+      setExpr('surprised', 0.70*jolt + 0.20*e);
+      setExpr('blink',     0.85*envelope(t, 0.26, 0.35, 0.45));
+      setExpr('smile',     0.55*e);
+      setExpr('browUp',    0.55*e);
+      setExpr('tongue',    0.9*envelope(Math.max(0,t-0.18), 1.0, 0.25, 0.4));  // blep
+      pose.add('head', (0.085*jolt - 0.04*e), s2*0.05*e, s2*0.03*e);
+      pose.add('neck', 0.05*jolt, 0, 0);
+      pose.add('chest', 0.03*jolt, 0, 0);
       earImpulse  = Math.max(earImpulse, 1.0*e);
       gestureTail = Math.max(gestureTail, 0.6*e);
       if (!this._sparked){
@@ -2188,7 +2195,10 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
   if (cornerTimer && moved > CORNER_TOL){ clearTimeout(cornerTimer); cornerTimer=null; }
   if (moved > MOVE_TOL){
     if(longTimer){ clearTimeout(longTimer); longTimer=null; }
-    if(!cornerTimer) pDown=null;
+    // Mark the tap as invalidated rather than dropping pDown entirely —
+    // nulling it here meant pointermove bailed out early and petting could
+    // never accumulate past the first few pixels.
+    pDown.moved = true;
   }
 });
 function endPointer(ev){
@@ -2196,7 +2206,7 @@ function endPointer(ev){
   cancelLong();
   applyCamLock();                       // restore orbit state after a pet-drag
   if (pDown && pDown.petted){ pDown=null; return; }   // a pet isn't a tap
-  if (pDown && !longFired){
+  if (pDown && !longFired && !pDown.moved){
     const moved = Math.hypot(ev.clientX-pDown.x, ev.clientY-pDown.y);
     const dt = performance.now()-pDown.t;
     if (moved<=MOVE_TOL && dt<=TAP_MS){
