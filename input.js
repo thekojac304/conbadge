@@ -3,7 +3,7 @@
 import { THREE, S, rig, settings, scene, camera, renderer, controls, hooks, toast } from './core.js';
 import { CONFIG, TOUCH_ZONES } from './config.js';
 import { anchorWorld, raycaster, ndc } from './pose.js';
-import { reactions, petting, hold } from './anim.js';
+import { reactions, petting } from './anim.js';
 
 /* ---------------------------------------------------------------------------
    Swipe trail — a soft tapering streak following the finger while petting.
@@ -126,59 +126,19 @@ function reactAt(clientX, clientY){
    canvas; OrbitControls also listens, so movement past a threshold = orbit.
    =========================================================================== */
 let pDown=null, longTimer=null, longFired=false, pointerCount=0, cornerTimer=null;
-let grabTimer=null, grabMoveT=0;
 const MOVE_TOL=10, LONG_MS=550, TAP_MS=320, CORNER_MS=1200, CORNER_PX=90, CORNER_TOL=45;
-
-/* ---------------------------------------------------------------------------
-   Carrying him around. While he's held, the finger has to become a point in 3D
-   — we project the pointer ray onto the plane he was grabbed on (facing the
-   camera, through the grab point). Depth therefore never changes while you
-   drag, which is what you want: he tracks your finger across the glass instead
-   of sliding toward or away from the lens.
---------------------------------------------------------------------------- */
-const grabPlane = new THREE.Plane();
-const _gN = new THREE.Vector3(), _gP = new THREE.Vector3();
-
-function pointerWorld(clientX, clientY){
-  ndc.x = (clientX/window.innerWidth)*2-1;
-  ndc.y = -(clientY/window.innerHeight)*2+1;
-  raycaster.setFromCamera(ndc, camera);
-  return raycaster.ray.intersectPlane(grabPlane, _gP) ? _gP : null;
-}
-
-function startGrab(pick){
-  if (!pick) return false;
-  camera.getWorldDirection(_gN);
-  grabPlane.setFromNormalAndCoplanarPoint(_gN, pick.point);
-  if (!hold.grab(pick.zone, pick.point)) return false;
-  grabMoveT = performance.now();
-  try{ navigator.vibrate?.(12); }catch{}      // a little haptic thump on pickup
-  return true;
-}
 
 renderer.domElement.addEventListener('pointerdown', (ev)=>{
   S.lastInteract = performance.now();
   pointerCount++;
   if (pointerCount>1){ cancelLong(); pDown=null; return; }   // pinch → ignore tap/long
-  const pick = pickZone(ev.clientX, ev.clientY);
   pDown={ x:ev.clientX, y:ev.clientY, t:performance.now(),
           corner: ev.clientX < CORNER_PX && ev.clientY < CORNER_PX + 40,
-          onAvatar: !!pick, pick, petted:false };
+          onAvatar: !!pickZone(ev.clientX, ev.clientY), petted:false };
   longFired=false;
   // Dragging ON the avatar pets him; dragging on the background orbits the
   // camera. Suspending OrbitControls for the duration keeps the two apart.
   if (pDown.onAvatar) controls.enabled = false;
-
-  // Long-press splits by target: on HIM it's a pickup, on the background it's
-  // the settings sheet. Holding still is the shared signal, so the two would
-  // collide if they shared a target — hence the split. Moving first cancels
-  // both and you're petting instead.
-  if (pDown.onAvatar){
-    grabTimer = setTimeout(()=>{
-      grabTimer = null;
-      if (startGrab(pDown && pDown.pick)) longFired = true;
-    }, CONFIG.HOLD_GRAB_MS);
-  }
 
   if (settings.mode === 'play'){
     // Escape hatch 1: hold the top-left corner.
@@ -188,7 +148,7 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
         exitPlayMode();
       }, CORNER_MS);
     }
-  } else if (!pDown.onAvatar){
+  } else {
     longTimer=setTimeout(()=>{ longFired=true; hooks.openSettings?.(); }, LONG_MS);
   }
 });
@@ -214,16 +174,6 @@ function hideExitChip(){
 }
 document.getElementById('play-exit').addEventListener('click', exitPlayMode);
 renderer.domElement.addEventListener('pointermove', (ev)=>{
-  // Carrying him wins outright: no petting, no trail, no orbit until you let go.
-  if (hold.state === 'held'){
-    const now = performance.now();
-    const dt  = Math.min(0.1, (now - grabMoveT)/1000);
-    grabMoveT = now;
-    const p = pointerWorld(ev.clientX, ev.clientY);
-    if (p) hold.moveTo(p, dt);
-    S.lastInteract = now;
-    return;
-  }
   if(!pDown) return;
   const moved = Math.hypot(ev.clientX-pDown.x, ev.clientY-pDown.y);
 
@@ -249,7 +199,6 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
   if (cornerTimer && moved > CORNER_TOL){ clearTimeout(cornerTimer); cornerTimer=null; }
   if (moved > MOVE_TOL){
     if(longTimer){ clearTimeout(longTimer); longTimer=null; }
-    if(grabTimer){ clearTimeout(grabTimer); grabTimer=null; }
     // Mark the tap as invalidated rather than dropping pDown entirely —
     // nulling it here meant pointermove bailed out early and petting could
     // never accumulate past the first few pixels.
@@ -260,7 +209,6 @@ function endPointer(ev){
   pointerCount = Math.max(0, pointerCount-1);
   cancelLong();
   controls.enabled = !settings.camLock;   // restore orbit after a pet-drag
-  if (hold.state === 'held'){ hold.release(); pDown=null; return; }
   if (pDown && pDown.petted){ pDown=null; return; }   // a pet isn't a tap
   if (pDown && !longFired && !pDown.moved){
     const moved = Math.hypot(ev.clientX-pDown.x, ev.clientY-pDown.y);
@@ -274,11 +222,10 @@ function endPointer(ev){
   pDown=null;
 }
 renderer.domElement.addEventListener('pointerup', endPointer);
-renderer.domElement.addEventListener('pointercancel', ()=>{ pointerCount=Math.max(0,pointerCount-1); cancelLong(); hold.release(); controls.enabled = !settings.camLock; pDown=null; });
+renderer.domElement.addEventListener('pointercancel', ()=>{ pointerCount=Math.max(0,pointerCount-1); cancelLong(); controls.enabled = !settings.camLock; pDown=null; });
 function cancelLong(){
   if(longTimer){ clearTimeout(longTimer); longTimer=null; }
   if(cornerTimer){ clearTimeout(cornerTimer); cornerTimer=null; }
-  if(grabTimer){ clearTimeout(grabTimer); grabTimer=null; }
 }
 
 /* Neutralise the idle resting arm pose for one side, so a gesture can specify

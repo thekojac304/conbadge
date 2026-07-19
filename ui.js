@@ -47,8 +47,7 @@ function openSettings(){ els.sheet.classList.add('open'); renderMorphList(); }
 function closeSettings(){ els.sheet.classList.remove('open'); }
 
 /* ---- Modes ---------------------------------------------------------------
-   setup: gear + fullscreen buttons visible, long-press on the BACKGROUND opens
-          settings (a long-press on the avatar picks him up instead).
+   setup: gear + fullscreen buttons visible, long-press opens settings.
    play : no controls at all — just the avatar and its touch reactions. The way
           back is a 1.5s hold on the top-left corner, which nobody discovers by
           accident but you can do one-handed on a lanyard. */
@@ -160,14 +159,6 @@ tgMotion.addEventListener('change', async e=>{
 
 document.getElementById('tg-particles').addEventListener('change', e=>{
   settings.particles = e.target.checked; saveSettings();
-});
-
-// Pick him up — long-press ON him to grab. Defaults ON for anyone upgrading,
-// hence the !== false test rather than a truthiness check.
-const tgPickup = document.getElementById('tg-pickup');
-tgPickup.checked = settings.pickup !== false;
-tgPickup.addEventListener('change', e=>{
-  settings.pickup = e.target.checked; saveSettings();
 });
 
 // Tilt parallax — depends on the motion sensors being on

@@ -4,7 +4,7 @@ import { THREE, S, rig, settings, scene, camera, renderer, controls, clock, resi
 import { CONFIG } from './config.js';
 import { pose, flushExpr } from './pose.js';
 import { idle, gestures, reactions, petting, particles, applyTailPose, applyEarPose,
-         decayImpulses, applyHipsDrop, hold, applyHoldRoot } from './anim.js';
+         decayImpulses, applyHipsDrop } from './anim.js';
 import { clampCameraTarget, applyView, updateParallax, renderScene } from './camera.js';
 import { updateZoneDebug, updateTrail } from './input.js';
 import { mountVRM } from './avatar.js';
@@ -32,7 +32,6 @@ function loop(){
 
   if (S.vrm){
     pose.clear();
-    hold.update(dt);              // first: it sets idle.body, which idle reads below
     idle.update(dt);
     petting.update(dt);
     gestures.update(dt);
@@ -43,7 +42,6 @@ function loop(){
     flushExpr(dt);                // write morph influences (after update)
     applyTailPose(idle.t);        // persistent tail curl/lift/sway (post-spring)
     applyEarPose(idle.t);         // ear twitches (post-spring)
-    applyHoldRoot();              // pin the grip to the finger / fall / land (root transform)
     decayImpulses(dt);
   }
   if (CONFIG.ZONE_DEBUG) updateZoneDebug();
