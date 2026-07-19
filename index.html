@@ -452,7 +452,7 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
    CONFIG — the knobs you'll actually tune per avatar
    =========================================================================== */
 const CONFIG = {
-  BUILD: 'b20',            // bump on each new version — shown in the load readout
+  BUILD: 'b21',            // bump on each new version — shown in the load readout
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
   ORBIT_AZIMUTH: 0.62,     // rad: how far left/right you can orbit (clamped both ways)
   ORBIT_POLAR_LO: 1.12,    // rad from +Y: how far you can look down over the top
@@ -472,9 +472,10 @@ const CONFIG = {
   WAVE_FORWARD: 0.28,      // slight forward angle so the wave isn't dead flat to the side
   WAVE_ELBOW: 1.45,        // elbow fold (Z) — holds the forearm ~upright
   WAVE_WAGGLE: 0.55,       // wrist sweep amplitude (the actual waving motion)
+  WAVE_PALM: -0.35,        // forearm twist so the palm faces FORWARD (add ~3.14 if it faces back)
   STRETCH_RAISE: 1.85,     // arms-overhead angle above horizontal (~106°)
-  SCRATCH_SIDE: 0.26,      // extra clearance outside the head (× hips→head span)
-  SCRATCH_PAW: 0.34,       // paw length as a fraction of forearm — keeps fingers out of the head
+  SCRATCH_SIDE: 0.12,      // fallback clearance if no ear bones (× hips→head span)
+  SCRATCH_PAW: 0.14,       // hold-off as a fraction of forearm, so fingers just touch
   SCRATCH_PALM: 1.25,      // forearm twist so the palm faces the head (negate to flip)
   SCRATCH_UP: 0.10,        // how far above head-bone height the paw scratches
   SCRATCH_DEPTH: 0.02,     // forward/back nudge of the scratch point
@@ -1349,11 +1350,12 @@ const GESTURES = {
   // paw between the face and a straight arm. The forearm holds ~upright and
   // only tips slightly; the hand does the actual waving.
   wave(t,d){ const e=envelope(t,d); const s=Math.sin(t*7);
-    const W=CONFIG.WAVE_WAGGLE;
+    const W=CONFIG.WAVE_WAGGLE, P=CONFIG.WAVE_PALM;
     armBase('right', e);                                                // clean slate
     pose.add('rightUpperArm', 0, CONFIG.WAVE_FORWARD*e, CONFIG.WAVE_RAISE*e);
-    pose.add('rightLowerArm', 0, 0, (CONFIG.WAVE_ELBOW + s*W*0.35)*e);  // upright, slight tip
-    pose.add('rightHand',     0, 0, (s*W)*e);                           // wrist does the wave
+    // twist the forearm about its own axis so the palm faces the viewer
+    pose.add('rightLowerArm', P*e, 0, (CONFIG.WAVE_ELBOW + s*W*0.35)*e);
+    pose.add('rightHand',     P*0.3*e, 0, (s*W)*e);                     // wrist does the wave
   },
   // A real stretch isn't symmetric and isn't a hold — the arms lead with bent
   // elbows, unfold near the top, and arrive slightly apart in time.
@@ -1715,7 +1717,7 @@ const reactions = {
       if (vrm){ const sx=1+0.05*p, sy=1-0.07*p; vrm.scene.scale.set(sx, sy, sx); }
     }
     else if (this.kind==='wave'){
-      const W=CONFIG.WAVE_WAGGLE;
+      const W=CONFIG.WAVE_WAGGLE, P=CONFIG.WAVE_PALM;
       const L = this.side==='left';
       const side = L ? 'left' : 'right';
       const arm  = L ? 'leftUpperArm' : 'rightUpperArm';
@@ -1725,8 +1727,8 @@ const reactions = {
       const s = Math.sin(t*8);
       armBase(side, e);                                    // clean slate
       pose.add(arm,  0, m*CONFIG.WAVE_FORWARD*e, m*CONFIG.WAVE_RAISE*e);
-      pose.add(fore, 0, 0, m*(CONFIG.WAVE_ELBOW + s*W*0.35)*e);
-      pose.add(hand, 0, 0, m*(s*W)*e);
+      pose.add(fore, P*e, 0, m*(CONFIG.WAVE_ELBOW + s*W*0.35)*e);
+      pose.add(hand, P*0.3*e, 0, m*(s*W)*e);
       setExpr('happy', 0.5*e);
     }
 
@@ -2026,20 +2028,38 @@ function armReach(side, target, w){
   return true;
 }
 
-// Where the scratching paw should land: just outside the ear, slightly above it.
-const _scT = new THREE.Vector3(), _scOut = new THREE.Vector3();
+// Where the scratching paw should land. If the rig has ear bones we aim at the
+// one on the scratching side — far more accurate than guessing an offset from
+// the head bone, since head size varies wildly between avatars.
+const _scT = new THREE.Vector3(), _scOut = new THREE.Vector3(), _scE = new THREE.Vector3();
 function scratchTarget(){
   const head = rig.raw.head || rig.raw.neck;
   if (!head || !rig.lateral) return null;
-  head.getWorldPosition(_scT);
   const s = rig.touchScale || 0.4;
-  // The IK places the WRIST at the target, but the paw extends past the wrist —
-  // so push the target out by roughly a paw length or the fingers bury
-  // themselves in the head. Derived from forearm length, so it self-scales.
-  const pawMargin = rig.armL2 * CONFIG.SCRATCH_PAW;
   _scOut.copy(rig.lateral).multiplyScalar(-1);      // avatar's right side
-  _scT.addScaledVector(_scOut, CONFIG.SCRATCH_SIDE * s + pawMargin);
-  _scT.y += CONFIG.SCRATCH_UP * s;
+
+  // pick the ear on the right side, if we found any
+  let ear = null, bestDot = 0.001;
+  if (rig.ears.length){
+    head.getWorldPosition(_scT);
+    for (const e of rig.ears){
+      e.getWorldPosition(_scE);
+      const dot = _scE.sub(_scT).dot(_scOut);
+      if (dot > bestDot){ bestDot = dot; ear = e; }
+    }
+  }
+
+  if (ear){ ear.getWorldPosition(_scT); }
+  else {
+    head.getWorldPosition(_scT);
+    _scT.addScaledVector(_scOut, CONFIG.SCRATCH_SIDE * s);
+    _scT.y += CONFIG.SCRATCH_UP * s;
+  }
+
+  // The IK puts the WRIST at the target, and the paw extends past the wrist, so
+  // hold off by a fraction of a paw length — enough to avoid burying the fingers
+  // without parking the arm out in space.
+  _scT.addScaledVector(_scOut, rig.armL2 * CONFIG.SCRATCH_PAW);
   if (rig.forward) _scT.addScaledVector(rig.forward, CONFIG.SCRATCH_DEPTH * s);
   return _scT;
 }
