@@ -317,6 +317,19 @@ const GESTURES = {
     pose.add('spine', 0, 0,-0.04*e);
   },
 
+  // Quick playful blep. The tongue leads, then the head tilts into it — doing
+  // both at once reads as a glitch rather than a deliberate little moment.
+  blep(t,d){
+    const e  = envelope(t, d, 0.18, 0.35);
+    const tn = envelope(t, d, 0.10, 0.30);          // tongue snaps out faster
+    setExpr('tongue',    0.95*tn);
+    setExpr('smile',     0.45*e);
+    setExpr('smileEyes', 0.28*e);
+    pose.add('head', 0.06*e, Math.sin(t*2.6)*0.06*e, 0.15*e);   // tilt + slow sway
+    pose.add('neck', 0.03*e, 0, 0.07*e);
+    earImpulse = Math.max(earImpulse, 0.45*e);
+  },
+
   // Just the ears — small enough to fire often without being distracting.
   earFlick(t,d){ const e=envelope(t,d,0.2,0.3);
     earImpulse = Math.max(earImpulse, 1.0*e);
@@ -331,7 +344,7 @@ const gestures = {
   start(name){ this.cur=name; this.t=0;
     this.dur = ({ wave:2.6, stretch:4.0, footShuffle:3.4, lookAround:3.6, headTilt:2.6,
                   scratchHead:3.0, shake:1.5, weightShift:4.0, sniff:2.6,
-                  tailSwish:3.4, earFlick:1.2,
+                  tailSwish:3.4, earFlick:1.2, blep:1.9,
                   pawLift:2.8, toeTap:3.0, heelRaise:2.4, legStretch:3.6 })[name] || 3;
     this.gainTarget=1; },
   fadeOut(){ this.gainTarget=0; },
