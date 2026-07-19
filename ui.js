@@ -1,13 +1,13 @@
 // Settings sheet, mode switching, the animation test bar and blendshape browser.
 import { THREE, S, rig, settings, saveSettings, camera, controls, hooks, toast,
-         showOverlay, showError, idbGet, idbPut, resize, motion, enableMotion, disableMotion } from './core.js';
+         showOverlay, showError, idbGet, idbPut, resize, motion, enableMotion, disableMotion,
+         LS, rand } from './core.js';
 import { CONFIG } from './config.js';
 import { mountVRM } from './avatar.js';
 import { frameCamera, currentView, applyView, saveCamOffset, frameTarget } from './camera.js';
 import { gestures, reactions, GESTURE_LIST } from './anim.js';
 
-settings.tailCurl = Math.max(0, settings.tailCurl||0);   // curl is one-way now
-settings.morphs = settings.morphs || {};
+
 
 const els = {
   plate:document.getElementById('nameplate'),
@@ -245,8 +245,7 @@ function renderMorphList(){
       });
       inp.addEventListener('change', ()=>{
         const val = +inp.value/100;
-        settings.morphs = settings.morphs || {};
-        if (val>0.001) settings.morphs[name] = val; else delete settings.morphs[name];
+                if (val>0.001) settings.morphs[name] = val; else delete settings.morphs[name];
         saveSettings();
         scheduleMorphRemount();
       });
@@ -379,41 +378,22 @@ fileInput.addEventListener('change', async ()=>{
 });
 
 /* ---- overlay / spinner / errors ---- */
-function showOverlay(show, title, msg, spin){
-  const ov=document.getElementById('overlay');
-  ov.classList.toggle('gone', !show);
-  document.getElementById('spinner').style.display = spin?'block':'none';
-  if(title!=null) document.getElementById('ov-title').textContent=title;
-  if(msg!=null)   document.getElementById('ov-msg').innerHTML=msg;
-  if(show){ document.getElementById('btn-pick').style.display = spin?'none':'inline-block'; }
-  document.getElementById('err').textContent='';
-}
-function showError(text){
-  const ov=document.getElementById('overlay'); ov.classList.remove('gone');
-  document.getElementById('spinner').style.display='none';
-  document.getElementById('btn-pick').style.display='inline-block';
-  document.getElementById('ov-title').textContent='Con Badge';
-  document.getElementById('ov-msg').innerHTML='Pick a <b>.vrm</b> avatar to bring your badge to life.';
-  document.getElementById('err').textContent=text;
-}
 
-function rand(a,b){ return a + Math.random()*(b-a); }
+
+
+
 
 // Small on-screen diagnostic (phones have no easy console).
-function toast(msg, ms=8000){
-  const d=document.getElementById('diag'); if(!d) return;
-  d.textContent=msg; d.style.opacity='1';
-  clearTimeout(toast._t); toast._t=setTimeout(()=>{ d.style.opacity='0'; }, ms);
-}
+
 
 /* ===========================================================================
    Boot
    =========================================================================== */
 
-// Let lower-level modules drive the UI without importing it.
-hooks.openSettings = openSettings;
+// Let lower-level modules drive the UI without importing it (avoids a cycle).
+hooks.openSettings  = openSettings;
 hooks.closeSettings = closeSettings;
-hooks.setMode = setMode;
+hooks.setMode       = setMode;
 hooks.onAvatarLoaded = ()=>{ if (els.sheet.classList.contains('open')) renderMorphList(); };
 
 export { applySettings, applyCamLock, openSettings, closeSettings, setMode, renderMorphList,
