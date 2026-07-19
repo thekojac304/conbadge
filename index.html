@@ -452,7 +452,7 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
    CONFIG — the knobs you'll actually tune per avatar
    =========================================================================== */
 const CONFIG = {
-  BUILD: 'b21',            // bump on each new version — shown in the load readout
+  BUILD: 'b22',            // bump on each new version — shown in the load readout
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
   ORBIT_AZIMUTH: 0.62,     // rad: how far left/right you can orbit (clamped both ways)
   ORBIT_POLAR_LO: 1.12,    // rad from +Y: how far you can look down over the top
@@ -472,12 +472,12 @@ const CONFIG = {
   WAVE_FORWARD: 0.28,      // slight forward angle so the wave isn't dead flat to the side
   WAVE_ELBOW: 1.45,        // elbow fold (Z) — holds the forearm ~upright
   WAVE_WAGGLE: 0.55,       // wrist sweep amplitude (the actual waving motion)
-  WAVE_PALM: -0.35,        // forearm twist so the palm faces FORWARD (add ~3.14 if it faces back)
+  WAVE_PALM: 1.25,         // forearm twist so the palm faces FORWARD (matched to SCRATCH_PALM)
   STRETCH_RAISE: 1.85,     // arms-overhead angle above horizontal (~106°)
   SCRATCH_SIDE: 0.12,      // fallback clearance if no ear bones (× hips→head span)
-  SCRATCH_PAW: 0.14,       // hold-off as a fraction of forearm, so fingers just touch
+  SCRATCH_PAW: 0.04,       // hold-off as a fraction of forearm (raise if fingers clip the ear)
   SCRATCH_PALM: 1.25,      // forearm twist so the palm faces the head (negate to flip)
-  SCRATCH_UP: 0.10,        // how far above head-bone height the paw scratches
+  SCRATCH_UP: 0.00,        // vertical nudge of the scratch point (× hips→head span)
   SCRATCH_DEPTH: 0.02,     // forward/back nudge of the scratch point
   BLINK_TIME: 0.10,        // seconds for a full blink (down+up)
   BLINK_MAX: 0.9,          // max eyelid weight; lower if the lids clip through the face
@@ -2053,8 +2053,8 @@ function scratchTarget(){
   else {
     head.getWorldPosition(_scT);
     _scT.addScaledVector(_scOut, CONFIG.SCRATCH_SIDE * s);
-    _scT.y += CONFIG.SCRATCH_UP * s;
   }
+  _scT.y += CONFIG.SCRATCH_UP * s;                 // vertical nudge, either path
 
   // The IK puts the WRIST at the target, and the paw extends past the wrist, so
   // hold off by a fraction of a paw length — enough to avoid burying the fingers
