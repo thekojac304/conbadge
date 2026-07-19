@@ -1,6 +1,6 @@
 // Con Badge — tuning constants and the touch-zone map.
 export const CONFIG = {
-  BUILD: 'b34',            // bump on each new version — shown in the load readout
+  BUILD: 'b35',            // bump on each new version — shown in the load readout
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
   ORBIT_AZIMUTH: 0.62,     // rad: how far left/right you can orbit (clamped both ways)
   ORBIT_POLAR_LO: 1.12,    // rad from +Y: how far you can look down over the top
@@ -51,6 +51,21 @@ export const CONFIG = {
   TILT_LEAN: 0.55,         // how much he counter-leans when the phone tilts (0 = off)
   PARALLAX_MAX: 0.20,      // radians of camera swing at full tilt (~11°); negate to invert
   PARALLAX_PITCH: 0.55,    // vertical parallax as a fraction of horizontal
+  /* --- Pick him up: long-press ON the avatar grabs, drag swings him around ---
+     Swing is a damped spring driven by how fast your finger moves, so he trails
+     behind the drag and overshoots when you stop. Spring/damp are in the usual
+     units: omega = sqrt(SPRING), zeta = DAMP / (2*sqrt(SPRING)). Keep zeta near
+     0.5 — critically damped (zeta 1) reads as stiff and lifeless. */
+  HOLD_GRAB_MS: 500,       // hold still this long ON him to grab (moving first = petting)
+  HOLD_SWING: 0.55,        // radians of lean per m/s of drag (how hard he trails behind)
+  HOLD_SWING_MAX: 1.15,    // cap on that lean (~66°) so he can't wrap right over
+  HOLD_SWING_SPRING: 46,   // pendulum stiffness — higher = snappier, less lazy
+  HOLD_SWING_DAMP: 6.4,    // pendulum damping — lower = swings longer after you stop
+  HOLD_FLAIL: 1.0,         // limb flail amplitude when he's held somewhere undignified
+  HOLD_GRAVITY: 7.0,       // m/s² once released (below real 9.8: he's small, reads better)
+  HOLD_FLING_MAX: 2.4,     // m/s cap on throw speed, so a fast flick can't launch him off-screen
+  HOLD_RECOVER: 0.85,      // seconds to settle back to home position after landing
+  HOLD_FADE: 0.18,         // seconds to blend the idle stance out on grab / in on landing
   KEEP_EXPRESSIONS: true,  // keep morphs used by badge expressions, prune the rest (mobile-safe)
   MORPH_CAP: 48,           // hard cap on kept morphs per mesh (safety for mobile GPUs)
   DPR_MAX: 2,              // pixel-ratio cap (perf); saver mode drops this
@@ -86,6 +101,8 @@ export const TOUCH_ZONES = [
   { name:'groin',  bone:'hips',       off:[0,-0.05, 0.16],    react:'fluster'   }, // pelvis front
   { name:'thighL', bone:'leftUpperLeg',  off:[0,-0.16, 0.08], react:'giggle'    }, // catcher: ticklish legs
   { name:'thighR', bone:'rightUpperLeg', off:[0,-0.16, 0.08], react:'giggle'    },
+  { name:'footL',  bone:'leftFoot',   off:[0, 0, 0],          react:'giggle'    }, // ticklish — and the undignified grab point
+  { name:'footR',  bone:'rightFoot',  off:[0, 0, 0],          react:'giggle'    },
   { name:'handL',  bone:'leftHand',   off:[0, 0, 0],          react:'waveLeft'  },
   { name:'handR',  bone:'rightHand',  off:[0, 0, 0],          react:'waveRight' },
   { name:'armL',   bone:'leftLowerArm',  off:[0, 0, 0],       react:'waveLeft'  }, // catcher: forearm

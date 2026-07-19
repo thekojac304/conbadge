@@ -89,7 +89,8 @@
     backdrop-filter:blur(6px);
   }
   .tool:active{ transform:scale(.94); }
-  /* In fullscreen the badge should be nothing but the avatar — long-press still
+  /* In fullscreen the badge should be nothing but the avatar — a long-press on
+     the BACKGROUND still
      opens settings, so the buttons aren't needed. */
   /* Play mode is the ONLY thing that hides controls. Fullscreen used to hide
      them too, which made fullscreen feel "locked" and left an installed PWA
@@ -144,7 +145,7 @@
   #overlay .row{ display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
   #err{ color:var(--danger); font-size:13px; margin-top:14px; min-height:1em; max-width:36ch; }
 
-  /* ---- Settings sheet (opened by long-press) ---------------------------- */
+  /* ---- Settings sheet (long-press the BACKGROUND; on him it's a pickup) -- */
   #settings{ position:fixed; inset:0; z-index:30; display:none;
              align-items:flex-end; justify-content:center; }
   #settings.open{ display:flex; }
@@ -417,6 +418,10 @@
           <div class="inline">
             <span>Keep screen awake<small>Prevents sleep while displayed</small></span>
             <label class="switch"><input type="checkbox" id="tg-wake" checked /><span class="track"></span><span class="knob"></span></label>
+          </div>
+          <div class="inline">
+            <span>Pick him up<small>Press and hold on him, then drag him around</small></span>
+            <label class="switch"><input type="checkbox" id="tg-pickup" checked /><span class="track"></span><span class="knob"></span></label>
           </div>
         </div>
         <div class="card">
