@@ -422,6 +422,10 @@
             <label class="switch"><input type="checkbox" id="tg-motion" /><span class="track"></span><span class="knob"></span></label>
           </div>
           <div class="inline">
+            <span>Hearts &amp; sparkles<small>Particles when petted or booped</small></span>
+            <label class="switch"><input type="checkbox" id="tg-particles" checked /><span class="track"></span><span class="knob"></span></label>
+          </div>
+          <div class="inline">
             <span>Tilt parallax<small>Camera swings with the phone — a window effect</small></span>
             <label class="switch"><input type="checkbox" id="tg-parallax" /><span class="track"></span><span class="knob"></span></label>
           </div>
@@ -452,7 +456,7 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
    CONFIG — the knobs you'll actually tune per avatar
    =========================================================================== */
 const CONFIG = {
-  BUILD: 'b24',            // bump on each new version — shown in the load readout
+  BUILD: 'b25',            // bump on each new version — shown in the load readout
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
   ORBIT_AZIMUTH: 0.62,     // rad: how far left/right you can orbit (clamped both ways)
   ORBIT_POLAR_LO: 1.12,    // rad from +Y: how far you can look down over the top
@@ -491,6 +495,9 @@ const CONFIG = {
   SOLID_DEBUG: false,      // paint every mesh a flat bright color (isolates geometry vs material)
   ZONE_DEBUG: false,       // draw a dot at every touch-zone anchor (set true to tune zones)
   ATTACH_LOOSE: true,      // re-parent unskinned meshes (rigid accessories) to the nearest bone
+  PET_GAIN: 2.4,           // how fast petting builds up (higher = more sensitive)
+  PET_DECAY: 1.6,          // how fast it fades once you stop
+  HEART_RATE: 0.16,        // seconds between hearts while petting
   SHAKE_THRESHOLD: 14,     // m/s² of jolt needed to trigger dizzy (lower = more sensitive)
   SHAKE_COOLDOWN: 3000,    // ms before another shake can register
   TILT_LEAN: 0.55,         // how much he counter-leans when the phone tilts (0 = off)
@@ -523,7 +530,7 @@ const TOUCH_ZONES = [
   // adding thigh/forearm anchors stops those taps being stolen by groin/chest.
   { name:'ears',   bone:'ears',       off:[0, 0, 0],          react:'happy'     },
   { name:'head',   bone:'head',       off:[0, 0.11, 0.02],    react:'happy'     }, // top of skull
-  { name:'muzzle', bone:'head',       off:[0,-0.06, 0.20],    react:'blush'     }, // snout/front of face
+  { name:'nose',   bone:'head',       off:[0,-0.06, 0.22],    react:'boop'      }, // snout tip — boop!
   { name:'cheekL', bone:'head',       off:[ 0.13,-0.03, 0.12], react:'blush'    },
   { name:'cheekR', bone:'head',       off:[-0.13,-0.03, 0.12], react:'blush'    },
   { name:'chest',  bone:'upperChest', off:[0, 0.02, 0.13],    react:'giggle'    }, // pecs / upper torso
@@ -1652,7 +1659,8 @@ function applyTailPose(time){
 
   // Wag is ADDED on top of the curl rather than replacing it, so a happy
   // reaction swishes from wherever you've posed the tail.
-  const wagging = reactions.active && (reactions.kind==='happy' || reactions.kind==='bellyRub');
+  const wagging = (reactions.active && (reactions.kind==='happy' || reactions.kind==='bellyRub'))
+                  || petting.energy > 0.25;
 
   // Distribute the curl so each joint bends MORE than the last — that's what
   // makes the tail coil rather than arc as one stiff banana.
@@ -1685,6 +1693,123 @@ function applyTailPose(time){
 }
 
 /* ===========================================================================
+   Particles — little hearts while petting, sparkles on a boop.
+   A fixed pool of sprites (no allocation during play), each with its own
+   material so they fade independently. Cheap enough for a phone.
+   =========================================================================== */
+const particles = {
+  pool: [], tex: null, sparkTex: null, ready: false,
+  makeTex(kind){
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const g = c.getContext('2d');
+    g.fillStyle = '#fff';
+    if (kind === 'heart'){
+      g.beginPath();
+      g.moveTo(32, 52);
+      g.bezierCurveTo(2, 32, 10, 6, 32, 22);
+      g.bezierCurveTo(54, 6, 62, 32, 32, 52);
+      g.fill();
+    } else {
+      g.beginPath();
+      g.moveTo(32, 2); g.quadraticCurveTo(36, 28, 62, 32);
+      g.quadraticCurveTo(36, 36, 32, 62);
+      g.quadraticCurveTo(28, 36, 2, 32);
+      g.quadraticCurveTo(28, 28, 32, 2);
+      g.fill();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  },
+  init(){
+    if (this.ready) return;
+    this.tex = this.makeTex('heart');
+    this.sparkTex = this.makeTex('spark');
+    for (let i=0;i<28;i++){
+      const m = new THREE.SpriteMaterial({ map:this.tex, transparent:true, opacity:0, depthTest:false });
+      const s = new THREE.Sprite(m);
+      s.visible = false; s.renderOrder = 900;
+      s.userData = { vel:new THREE.Vector3(), life:0, max:1, base:0.1 };
+      scene.add(s);
+      this.pool.push(s);
+    }
+    this.ready = true;
+  },
+  spawn(pos, n=1, kind='heart', color=0xff6f9c){
+    this.init();
+    const scale = (rig.touchScale || 0.4);
+    for (let k=0;k<n;k++){
+      const s = this.pool.find(p=>!p.visible);
+      if (!s) return;                                  // pool exhausted; skip
+      s.material.map = (kind==='heart') ? this.tex : this.sparkTex;
+      s.material.color.setHex(color);
+      s.material.opacity = 0;
+      s.position.copy(pos);
+      s.position.x += (Math.random()-0.5) * scale*0.18;
+      s.position.y += (Math.random()-0.5) * scale*0.10;
+      s.position.z += (Math.random()-0.5) * scale*0.18;
+      s.userData.vel.set((Math.random()-0.5)*scale*0.30, scale*(0.45+Math.random()*0.30), (Math.random()-0.5)*scale*0.20);
+      s.userData.max = s.userData.life = 0.9 + Math.random()*0.5;
+      s.userData.base = scale * (0.10 + Math.random()*0.06);
+      s.visible = true;
+      s.scale.setScalar(0.01);
+    }
+  },
+  update(dt){
+    if (!this.ready) return;
+    for (const s of this.pool){
+      if (!s.visible) continue;
+      const u = s.userData;
+      u.life -= dt;
+      if (u.life <= 0){ s.visible = false; s.material.opacity = 0; continue; }
+      const p = 1 - u.life/u.max;                       // 0→1 over lifetime
+      u.vel.y += dt * (rig.touchScale||0.4) * 0.25;     // gentle float upward
+      u.vel.multiplyScalar(1 - dt*0.6);                 // drag
+      s.position.addScaledVector(u.vel, dt);
+      s.material.opacity = p < 0.18 ? (p/0.18) : (1 - (p-0.18)/0.82);
+      s.scale.setScalar(u.base * (p < 0.18 ? (0.5 + p*2.8) : 1));
+    }
+  }
+};
+
+/* ===========================================================================
+   Petting — a sustained state rather than a one-shot reaction. Dragging across
+   the avatar builds energy; it decays when you stop, so the response eases in
+   and out instead of snapping on and off.
+   =========================================================================== */
+const petting = {
+  energy: 0, active: false, heartT: 0, pos: new THREE.Vector3(), zone: null,
+  feed(dist, point, zone){
+    this.energy = Math.min(1, this.energy + dist * CONFIG.PET_GAIN);
+    this.active = true;
+    this.zone = zone;
+    if (point) this.pos.copy(point);
+  },
+  update(dt){
+    if (!this.active) this.energy = Math.max(0, this.energy - dt*CONFIG.PET_DECAY);
+    this.active = false;                                // re-asserted by pointermove
+    if (this.energy <= 0.02) return;
+
+    const e = this.energy;
+    setExpr('happy',     0.85*e);
+    setExpr('smile',     0.80*e);
+    setExpr('smileEyes', 0.75*e);
+    pose.add('head',  -0.10*e, 0, 0.07*e);              // leans into the hand
+    pose.add('neck',  -0.05*e, 0, 0.04*e);
+    pose.add('chest', -0.03*e, 0, 0);
+    earImpulse = Math.max(earImpulse, 0.25*e);
+
+    if (settings.particles !== false){
+      this.heartT -= dt;
+      if (this.heartT <= 0 && e > 0.35){
+        this.heartT = CONFIG.HEART_RATE;
+        particles.spawn(this.pos, 1, 'heart', 0xff6f9c);
+      }
+    }
+  }
+};
+
+/* ===========================================================================
    Touch reactions.  A reaction owns humanoid offsets (pre-update, via pose),
    expression targets, tail/ear overrides (post-update), and scale pulses.
    A new tap replaces the current reaction and fades gestures out cleanly.
@@ -1692,11 +1817,11 @@ function applyTailPose(time){
 const reactions = {
   active:null, t:0, dur:0, kind:null, side:null,
   scalePulse:0,               // giggle squash envelope 0..1
-  clear(){ this.active=null; this.t=0; this.kind=null; this.side=null; this.scalePulse=0; if(vrm) vrm.scene.scale.setScalar(1); },
+  clear(){ this.active=null; this.t=0; this.kind=null; this.side=null; this.scalePulse=0; this._sparked=false; if(vrm) vrm.scene.scale.setScalar(1); },
   fire(kind, side){
-    this.kind=kind; this.side=side; this.t=0; this.active=true;
+    this.kind=kind; this.side=side; this.t=0; this.active=true; this._sparked=false;
     this.dur = ({ happy:CONFIG.TAIL_WAG_SECONDS, blush:2.0, giggle:1.3, wave:2.4,
-                  bellyRub:3.2, fluster:2.4, dizzy:3.8 })[kind] || 2.0;
+                  bellyRub:3.2, fluster:2.4, dizzy:3.8, boop:1.4 })[kind] || 2.0;
     gestures.fadeOut();       // clean interrupt: gain fades the gesture layer out
   },
   update(dt){
@@ -1777,6 +1902,25 @@ const reactions = {
       gestureHips = Math.min(gestureHips, -0.02*rig.legLength*e);
       gestureTail = Math.max(gestureTail, 0.9*e);
       earImpulse  = Math.max(earImpulse, 0.45*e);
+    }
+    else if (this.kind==='boop'){
+      // sharp recoil on contact, then a pleased little shake-off
+      const jolt = Math.max(0, 1 - t/0.22);
+      const s2 = Math.sin(t*17);
+      setExpr('surprised', 0.85*jolt + 0.25*e);
+      setExpr('blink',     0.9*Math.max(0, 1 - t/0.16));
+      setExpr('smile',     0.55*e*(1-jolt));
+      setExpr('browUp',    0.6*e);
+      pose.add('head', (0.16*jolt - 0.05*e), s2*0.06*e, 0);   // snaps back, then wiggles
+      pose.add('neck', 0.09*jolt, 0, 0);
+      pose.add('chest', 0.05*jolt, 0, 0);
+      earImpulse  = Math.max(earImpulse, 1.0*e);
+      gestureTail = Math.max(gestureTail, 0.6*e);
+      if (!this._sparked){
+        this._sparked = true;
+        const p = anchorWorld({ bone:'head', off:[0,-0.06,0.24] });
+        if (p && settings.particles !== false) particles.spawn(p, 6, 'spark', 0xfff0a0);
+      }
     }
     else if (this.kind==='giggle'){
       setExpr('happy', 0.9*e);
@@ -1933,29 +2077,33 @@ function updateZoneDebug(){
   }
 }
 
-function reactAt(clientX, clientY){
-  if(!vrm) return;
+function pickZone(clientX, clientY){
+  if(!vrm) return null;
   ndc.x = (clientX/window.innerWidth)*2-1;
   ndc.y = -(clientY/window.innerHeight)*2+1;
   raycaster.setFromCamera(ndc, camera);
   const hits = raycaster.intersectObject(vrm.scene, true);
-  if(!hits.length) return;                          // missed the avatar
+  if(!hits.length) return null;                     // missed the avatar
   const hit = hits[0].point;
 
-  // snap hit → nearest configured anchor
   let best=null, bd=Infinity;
   for (const z of TOUCH_ZONES){
     const a = anchorWorld(z); if(!a) continue;
     const dd = a.distanceToSquared(hit);
     if (dd<bd){ bd=dd; best=z; }
   }
-  if(!best) return;
+  return best ? { zone:best, point:hit } : null;
+}
 
-  switch(best.react){
+function reactAt(clientX, clientY){
+  const pick = pickZone(clientX, clientY);
+  if(!pick) return;
+  switch(pick.zone.react){
     case 'happy':     reactions.fire('happy'); break;
     case 'blush':     reactions.fire('blush'); break;
     case 'giggle':    reactions.fire('giggle'); break;
     case 'bellyRub':  reactions.fire('bellyRub'); break;
+    case 'boop':      reactions.fire('boop'); break;
     case 'fluster':   reactions.fire('fluster'); break;
     case 'waveLeft':  reactions.fire('wave','left'); break;
     case 'waveRight': reactions.fire('wave','right'); break;
@@ -1975,8 +2123,12 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
   pointerCount++;
   if (pointerCount>1){ cancelLong(); pDown=null; return; }   // pinch → ignore tap/long
   pDown={ x:ev.clientX, y:ev.clientY, t:performance.now(),
-          corner: ev.clientX < CORNER_PX && ev.clientY < CORNER_PX + 40 };
+          corner: ev.clientX < CORNER_PX && ev.clientY < CORNER_PX + 40,
+          onAvatar: !!pickZone(ev.clientX, ev.clientY), petted:false };
   longFired=false;
+  // Dragging ON the avatar pets him; dragging on the background orbits the
+  // camera. Suspending OrbitControls for the duration keeps the two apart.
+  if (pDown.onAvatar) controls.enabled = false;
 
   if (settings.mode === 'play'){
     // Escape hatch 1: hold the top-left corner.
@@ -2014,6 +2166,22 @@ document.getElementById('play-exit').addEventListener('click', exitPlayMode);
 renderer.domElement.addEventListener('pointermove', (ev)=>{
   if(!pDown) return;
   const moved = Math.hypot(ev.clientX-pDown.x, ev.clientY-pDown.y);
+
+  // Petting: accumulate energy from how far the finger travels across him.
+  if (pDown.onAvatar && pointerCount === 1){
+    const dx = ev.clientX - (pDown.lastX ?? pDown.x);
+    const dy = ev.clientY - (pDown.lastY ?? pDown.y);
+    const step = Math.hypot(dx, dy) / Math.max(1, window.innerHeight);
+    if (step > 0.001){
+      const pick = pickZone(ev.clientX, ev.clientY);
+      if (pick){
+        petting.feed(step, pick.point, pick.zone);
+        pDown.petted = true;
+        lastInteract = performance.now();
+      }
+    }
+    pDown.lastX = ev.clientX; pDown.lastY = ev.clientY;
+  }
   // The corner hold gets a much looser tolerance — holding a finger still for
   // 1.5s always drifts more than the 10px tap threshold, which is why the
   // escape hatch kept failing.
@@ -2026,6 +2194,8 @@ renderer.domElement.addEventListener('pointermove', (ev)=>{
 function endPointer(ev){
   pointerCount = Math.max(0, pointerCount-1);
   cancelLong();
+  applyCamLock();                       // restore orbit state after a pet-drag
+  if (pDown && pDown.petted){ pDown=null; return; }   // a pet isn't a tap
   if (pDown && !longFired){
     const moved = Math.hypot(ev.clientX-pDown.x, ev.clientY-pDown.y);
     const dt = performance.now()-pDown.t;
@@ -2038,7 +2208,7 @@ function endPointer(ev){
   pDown=null;
 }
 renderer.domElement.addEventListener('pointerup', endPointer);
-renderer.domElement.addEventListener('pointercancel', ()=>{ pointerCount=Math.max(0,pointerCount-1); cancelLong(); pDown=null; });
+renderer.domElement.addEventListener('pointercancel', ()=>{ pointerCount=Math.max(0,pointerCount-1); cancelLong(); applyCamLock(); pDown=null; });
 function cancelLong(){
   if(longTimer){ clearTimeout(longTimer); longTimer=null; }
   if(cornerTimer){ clearTimeout(cornerTimer); cornerTimer=null; }
@@ -2199,6 +2369,7 @@ function loop(){
   if (vrm){
     pose.clear();
     idle.update(dt);
+    petting.update(dt);
     gestures.update(dt);
     if (reactions.active) reactions.update(dt);
     pose.apply();                 // write humanoid offsets (pre-update)
@@ -2215,6 +2386,7 @@ function loop(){
     if (Math.abs(gestureHips) < 0.0001) gestureHips = 0;
   }
   if (CONFIG.ZONE_DEBUG) updateZoneDebug();
+  particles.update(dt);
   updateParallax(dt);
   renderScene();
 }
@@ -2225,7 +2397,7 @@ function loop(){
 const settings = LS.get('cb.settings', { name:'', pronouns:'', showPlate:true,
   bgA:'#141a2c', bgB:'#05060b', saver:false, morphs:{}, tailCurl:0, tailLift:0, camOffsetY:0,
   camLock:false, autoReturn:0, viewDefault:null, mode:'setup', keepAwake:true,
-  motion:false, parallax:false });
+  motion:false, parallax:false, particles:true });
 settings.tailCurl = Math.max(0, settings.tailCurl||0);   // curl is one-way now
 settings.morphs = settings.morphs || {};
 
@@ -2317,7 +2489,7 @@ const BG_PRESETS = [
   const box = document.getElementById('test-chips');
   const REACTS = [
     ['Pat','happy'], ['Blush','blush'], ['Giggle','giggle'],
-    ['Belly','bellyRub'], ['Startle','fluster'], ['Dizzy','dizzy'],
+    ['Belly','bellyRub'], ['Startle','fluster'], ['Dizzy','dizzy'], ['Boop','boop'],
     ['Wave R','wave:right'], ['Wave L','wave:left'],
   ];
   let html = '<button class="chip stop" data-stop="1">■ Stop</button>';
@@ -2376,6 +2548,10 @@ tgMotion.addEventListener('change', async e=>{
     settings.motion = false;
   }
   saveSettings(); motionNote();
+});
+
+document.getElementById('tg-particles').addEventListener('change', e=>{
+  settings.particles = e.target.checked; saveSettings();
 });
 
 // Tilt parallax — depends on the motion sensors being on
@@ -2631,6 +2807,7 @@ async function boot(){
   applyCamLock();
   document.body.classList.toggle('mode-play', settings.mode==='play');
   document.getElementById('tg-wake').checked = settings.keepAwake !== false;
+  document.getElementById('tg-particles').checked = settings.particles !== false;
   // Android re-attaches without a prompt; iOS needs a tap, so the toggle just
   // shows off until the user flips it.
   if (settings.motion){
