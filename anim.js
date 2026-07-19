@@ -390,6 +390,9 @@ const _te = new THREE.Euler(), _tq = new THREE.Quaternion();
 let gestureTail = 0;       // extra tail motion requested by a gesture (0..1)
 let earImpulse = 0;        // ear twitch energy, decays each frame
 let gestureHips = 0;       // vertical hips offset requested by a gesture (metres)
+let wagPhase = 0;          // free-running tail wag phase — never stops, unlike reactions.t
+let wagAmt = 0;            // eased wag amplitude 0..1
+let wagLast = -1;          // previous applyTailPose() time, for deriving dt
 
 /* Ears — one place that merges idle micro-twitches, gesture flicks and the
    happy-reaction twitch. Runs post-update like the tail. */
@@ -417,8 +420,25 @@ function applyTailPose(time){
 
   // Wag is ADDED on top of the curl rather than replacing it, so a happy
   // reaction swishes from wherever you've posed the tail.
-  const wagging = (reactions.active && (reactions.kind==='happy' || reactions.kind==='bellyRub'))
-                  || petting.energy > 0.25;
+  //
+  // The phase MUST come off a clock that always runs. It used to read
+  // reactions.t, which only ticks while a REACTION is playing — so petting,
+  // which fires no reaction, sampled sin() at a permanently frozen t and pinned
+  // the tail to one side instead of wagging it. Hence a phase accumulator: it
+  // also lets the wag speed up as he gets more excited without the sine jumping,
+  // which multiplying a shared clock by a changing rate would do.
+  const wagWant = Math.max(
+    (reactions.active && (reactions.kind==='happy' || reactions.kind==='bellyRub')) ? 1 : 0,
+    Math.min(1, petting.energy * 1.4)
+  );
+  // `time` is idle.t; it resets to 0 on a remount, hence the clamp to >= 0.
+  const wdt = (wagLast < 0) ? 0 : Math.min(0.1, Math.max(0, time - wagLast));
+  wagLast = time;
+  // Ease the amplitude in and out. With a free-running phase a hard on/off at a
+  // threshold would snap the tail mid-swing.
+  wagAmt += (wagWant - wagAmt) * (1 - Math.pow(0.02, wdt));
+  wagPhase += wdt * (8.5 + 5.5*wagAmt);              // 1.4 Hz idling → 2.2 Hz thrilled
+  if (wagPhase > Math.PI*2) wagPhase -= Math.PI*2;   // keep precision bounded
 
   // Distribute the curl so each joint bends MORE than the last — that's what
   // makes the tail coil rather than arc as one stiff banana.
@@ -435,7 +455,7 @@ function applyTailPose(time){
     const lag = i * CONFIG.TAIL_LAG;
     const sway = Math.sin(time*1.1 - lag) * 0.04 * (0.4 + tip);
     const swish = gestureTail * Math.sin(time*3.4 - lag) * 0.18 * (0.4 + tip);
-    const wag  = wagging ? Math.sin(reactions.t*11 - lag) * 0.30 * (0.35 + tip*1.1) : 0;
+    const wag  = wagAmt * Math.sin(wagPhase - lag) * 0.30 * (0.35 + tip*1.1);
 
     // Curling straight up runs the tail into the back, so splay it slightly to
     // one side as it curls — which is how a real husky tail sits anyway.
