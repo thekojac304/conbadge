@@ -8,7 +8,7 @@
      - CDN modules    : stale-while-revalidate; three.js is pinned by version
                         so a cached copy is always correct.
 */
-const CACHE = 'conbadge-v4';
+const CACHE = 'conbadge-v5';
 const SHELL = [
   './',
   './index.html',
@@ -16,6 +16,8 @@ const SHELL = [
   './icon-192.png',
   './icon-512.png',
   './icon-maskable-512.png',
+  './main.js', './core.js', './config.js', './pose.js', './camera.js',
+  './anim.js', './avatar.js', './input.js', './ui.js',
 ];
 
 self.addEventListener('install', (e) => {
