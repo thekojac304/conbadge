@@ -432,7 +432,7 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
    CONFIG — the knobs you'll actually tune per avatar
    =========================================================================== */
 const CONFIG = {
-  BUILD: 'b17',            // bump on each new version — shown in the load readout
+  BUILD: 'b18',            // bump on each new version — shown in the load readout
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
   ORBIT_AZIMUTH: 0.62,     // rad: how far left/right you can orbit (clamped both ways)
   ORBIT_POLAR_LO: 1.12,    // rad from +Y: how far you can look down over the top
@@ -452,10 +452,9 @@ const CONFIG = {
   WAVE_FORWARD: 0.28,      // slight forward angle so the wave isn't dead flat to the side
   WAVE_ELBOW: 1.45,        // elbow fold (Z) — holds the forearm ~upright
   WAVE_WAGGLE: 0.55,       // wrist sweep amplitude (the actual waving motion)
-  SCRATCH_RAISE: 0.82,     // head-scratch arm lift (lower = paw further from the skull)
-  SCRATCH_ELBOW: 1.28,     // head-scratch elbow fold (lower = paw further out)
-  SCRATCH_FWD: 0.26,       // how far forward the scratching arm swings
-  SCRATCH_OUT: 0.20,       // outward roll to keep the paw beside the head, not through it
+  SCRATCH_SIDE: 0.30,      // how far outside the head the paw sits (× hips→head span)
+  SCRATCH_UP: 0.10,        // how far above head-bone height the paw scratches
+  SCRATCH_DEPTH: 0.02,     // forward/back nudge of the scratch point
   BLINK_TIME: 0.10,        // seconds for a full blink (down+up)
   BLINK_MAX: 0.9,          // max eyelid weight; lower if the lids clip through the face
   IDLE_SMILE: 0.16,        // baseline resting smile (0 = fully neutral face)
@@ -862,6 +861,25 @@ async function mountVRM(buffer, filename){
   // First update so normalized rest pose is valid, then capture rest quats.
   v.update(0);
   for (const name in rig.bones){ const n=rig.bones[name]; rig.rest.set(n, n.quaternion.clone()); }
+
+  // Arm segment lengths + the body's lateral axis, measured from the rest pose.
+  // These let gestures SOLVE for where to put a paw instead of me guessing
+  // angles that only happen to work on one avatar's proportions.
+  rig.armL1 = rig.armL2 = 0; rig.lateral = null;
+  if (rig.raw.rightUpperArm && rig.raw.rightLowerArm && rig.raw.rightHand){
+    const a=new THREE.Vector3(), b=new THREE.Vector3(), c=new THREE.Vector3();
+    rig.raw.rightUpperArm.getWorldPosition(a);
+    rig.raw.rightLowerArm.getWorldPosition(b);
+    rig.raw.rightHand.getWorldPosition(c);
+    rig.armL1 = a.distanceTo(b);
+    rig.armL2 = b.distanceTo(c);
+  }
+  if (rig.raw.leftUpperArm && rig.raw.rightUpperArm){
+    const a=new THREE.Vector3(), b=new THREE.Vector3();
+    rig.raw.leftUpperArm.getWorldPosition(a);
+    rig.raw.rightUpperArm.getWorldPosition(b);
+    rig.lateral = a.sub(b).setY(0).normalize();     // points toward the avatar's left
+  }
 
   // Reference span for proportional touch zones + gesture scaling.
   rig.touchScale = 0.4;
@@ -1363,15 +1381,21 @@ const GESTURES = {
     pose.add('head',0,0.05*e, 0.5*e); pose.add('neck',0,0,0.22*e);
   },
 
-  // Raise a paw toward the head and scratch. The paw has to stay OUTSIDE the
-  // skull, so the arm stays more abducted (less raise) and the elbow folds less
-  // than a full wave — those two together are what caused the clipping.
+  // Head scratch: the paw position is SOLVED (see armReach) so it lands beside
+  // the ear on any avatar, instead of relying on angles tuned to one rig.
   scratchHead(t,d){ const e=envelope(t,d,0.28,0.3); const s=Math.sin(t*15);
-    const A=CONFIG.ARM_DOWN;
-    pose.add('rightUpperArm', -CONFIG.SCRATCH_OUT*e, CONFIG.SCRATCH_FWD*e, (A+CONFIG.SCRATCH_RAISE)*e);
-    pose.add('rightLowerArm', 0, 0, (CONFIG.SCRATCH_ELBOW + s*0.09)*e);
-    pose.add('rightHand', 0, 0, (0.18 + s*0.26)*e);
-    pose.add('head', 0.04*e, -0.10*e, -0.13*e);      // leans into it
+    const tgt = scratchTarget();
+    if (tgt && armReach('right', tgt, e)){
+      pose.add('rightLowerArm', 0, 0, s*0.09*e);          // scratching motion
+      pose.add('rightHand',     0, 0, (0.12 + s*0.30)*e);
+    } else {
+      // fallback if the rig couldn't be measured
+      const A=CONFIG.ARM_DOWN;
+      pose.add('rightUpperArm', 0, 0, (A+0.10)*e);
+      pose.add('rightLowerArm', 0, 0, (2.30 + s*0.09)*e);
+      pose.add('rightHand',     0, 0, (0.12 + s*0.30)*e);
+    }
+    pose.add('head', 0.04*e, -0.09*e, -0.12*e);      // leans into it
     pose.add('neck', 0, -0.05*e, -0.06*e);
     earImpulse = Math.max(earImpulse, 0.4*e);
   },
@@ -1913,6 +1937,62 @@ renderer.domElement.addEventListener('pointercancel', ()=>{ pointerCount=Math.ma
 function cancelLong(){
   if(longTimer){ clearTimeout(longTimer); longTimer=null; }
   if(cornerTimer){ clearTimeout(cornerTimer); cornerTimer=null; }
+}
+
+/* ---------------------------------------------------------------------------
+   Two-bone arm IK. Given a world-space target, solve the shoulder and elbow
+   angles that actually put the paw there, using the avatar's measured bone
+   lengths. Hand-tuned angles only ever fit one set of proportions — which is
+   why the head scratch kept landing in the skull or out in front of the face.
+   Returns false if the rig wasn't measurable, so callers can fall back.
+--------------------------------------------------------------------------- */
+const _ikT = new THREE.Vector3(), _ikS = new THREE.Vector3(), _ikOut = new THREE.Vector3();
+function armReach(side, target, w){
+  const L1 = rig.armL1, L2 = rig.armL2;
+  if (!L1 || !L2 || !rig.lateral) return false;
+  const sh = rig.raw[side==='left' ? 'leftUpperArm' : 'rightUpperArm'];
+  if (!sh) return false;
+
+  sh.getWorldPosition(_ikS);
+  _ikT.copy(target).sub(_ikS);
+  _ikOut.copy(rig.lateral).multiplyScalar(side==='left' ? 1 : -1);   // outward on this side
+
+  const dx = _ikT.dot(_ikOut);                        // lateral (outward positive)
+  const dy = _ikT.y;                                  // vertical
+  const dz = rig.forward ? _ikT.dot(rig.forward) : 0; // forward
+
+  // solve in the vertical plane through the arm
+  let d = Math.hypot(dx, dy);
+  d = THREE.MathUtils.clamp(d, Math.abs(L1-L2)*1.05 + 1e-5, (L1+L2)*0.985);
+  const alpha = Math.atan2(dy, dx);                          // direction to target
+  const cosB  = (L1*L1 + d*d - L2*L2) / (2*L1*d);
+  const beta  = Math.acos(THREE.MathUtils.clamp(cosB, -1, 1));
+  const th1   = alpha - beta;                                // elbow-out solution
+  const ex = L1*Math.cos(th1), ey = L1*Math.sin(th1);
+  const th2 = Math.atan2(dy-ey, dx-ex) - th1;                // elbow fold
+  const yaw = Math.atan2(dz, Math.max(0.02, d));             // swing toward front/back
+
+  // Deltas are relative to the idle resting pose, so cancel the parts of it
+  // that would otherwise skew the reach (forward swing + resting elbow bend).
+  const A=CONFIG.ARM_DOWN, O=CONFIG.ARM_OUT, E=CONFIG.ELBOW_BEND, F=CONFIG.ARM_FORWARD;
+  const m = side==='left' ? -1 : 1;
+  pose.add(side==='left'?'leftUpperArm':'rightUpperArm', 0, m*(yaw - F)*w, m*(A - O + th1)*w);
+  pose.add(side==='left'?'leftLowerArm':'rightLowerArm', 0, -m*E*w,        m*th2*w);
+  return true;
+}
+
+// Where the scratching paw should land: just outside the ear, slightly above it.
+const _scT = new THREE.Vector3(), _scOut = new THREE.Vector3();
+function scratchTarget(){
+  const head = rig.raw.head || rig.raw.neck;
+  if (!head || !rig.lateral) return null;
+  head.getWorldPosition(_scT);
+  const s = rig.touchScale || 0.4;
+  _scOut.copy(rig.lateral).multiplyScalar(-1);      // avatar's right side
+  _scT.addScaledVector(_scOut, CONFIG.SCRATCH_SIDE * s);
+  _scT.y += CONFIG.SCRATCH_UP * s;
+  if (rig.forward) _scT.addScaledVector(rig.forward, CONFIG.SCRATCH_DEPTH * s);
+  return _scT;
 }
 
 /* ---------------------------------------------------------------------------
