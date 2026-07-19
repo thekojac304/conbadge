@@ -1,18 +1,13 @@
 // Idle life, gesture library, tail/ear motion, particles, petting, reactions.
-import { THREE, S, rig, settings, scene, camera, rand, motion, hooks } from './core.js';
+import { THREE, S, rig, settings, scene, rand, motion, hooks } from './core.js';
 import { CONFIG } from './config.js';
 import { pose, setExpr, envelope, armBase, armReach, scratchTarget, anchorWorld } from './pose.js';
 
 const idle = {
   t:0, blinkIn:rand(2,5), blinkT:-1, gaze:{x:0,y:0}, gazeTarget:{x:0,y:0}, gazeIn:rand(1.2,3),
   faceT:-1, faceIn:rand(3,8), faceKind:null,
-  // Weight of the STANDING part of the idle — arms, legs, the bounce. `hold`
-  // drives this to 0 while he's off the ground: feet planted on nothing looks
-  // absurd, and the resting arm angles fight the dangle. Breathing, blinking,
-  // gaze and the face are deliberately NOT gated — those keep running.
-  body:1,
   reset(){ this.t=0; this.blinkIn=rand(2,5); this.blinkT=-1; this.gaze={x:0,y:0}; this.gazeTarget={x:0,y:0}; this.gazeIn=rand(1.2,3);
-           this.faceT=-1; this.faceIn=rand(3,8); this.faceKind=null; this.body=1; },
+           this.faceT=-1; this.faceIn=rand(3,8); this.faceKind=null; },
   update(dt){
     this.t += dt;
 
@@ -25,22 +20,18 @@ const idle = {
     const flexL = Math.sin(this.t*0.43 + 1.9)*0.13, flexR = Math.sin(this.t*0.37 + 0.6)*0.13;
     const br = Math.sin(this.t*1.9)*0.5+0.5;      // shared breathing phase
 
-    // The 5th argument to pose.add is a weight — passing the body gain here is
-    // all it takes to hand the limbs over to `hold`.
-    const bd = this.body;
-
     // shoulders lift a little with each breath
-    pose.add('leftShoulder',  0, 0,  br*0.035, bd);
-    pose.add('rightShoulder', 0, 0, -br*0.035, bd);
+    pose.add('leftShoulder',  0, 0,  br*0.035);
+    pose.add('rightShoulder', 0, 0, -br*0.035);
     // upper arms: splay + slow forward/back swing + breathing
-    pose.add('leftUpperArm',  0, -F + swingL,  A - O + swayL + br*0.02, bd);
-    pose.add('rightUpperArm', 0,  F - swingR, -A + O - swayR - br*0.02, bd);
+    pose.add('leftUpperArm',  0, -F + swingL,  A - O + swayL + br*0.02);
+    pose.add('rightUpperArm', 0,  F - swingR, -A + O - swayR - br*0.02);
     // elbows breathe open and closed instead of holding one fixed angle
-    pose.add('leftLowerArm',  0, -(E + flexL), 0, bd);
-    pose.add('rightLowerArm', 0,  (E + flexR), 0, bd);
+    pose.add('leftLowerArm',  0, -(E + flexL), 0);
+    pose.add('rightLowerArm', 0,  (E + flexR), 0);
     // wrists drift so the hands aren't rigid blocks
-    pose.add('leftHand',  swayL*0.8, -0.08 + flexL*0.3,  swayL*0.5, bd);
-    pose.add('rightHand', swayR*0.8,  0.08 - flexR*0.3, -swayR*0.5, bd);
+    pose.add('leftHand',  swayL*0.8, -0.08 + flexL*0.3,  swayL*0.5);
+    pose.add('rightHand', swayR*0.8,  0.08 - flexR*0.3, -swayR*0.5);
 
     // Knees: a soft resting flex plus a slow bounce. Bending a knee needs three
     // joints working together or the pose breaks — the thigh swings forward
@@ -54,12 +45,12 @@ const idle = {
     const legPhase = [Math.sin(this.t*0.41)*0.06, Math.sin(this.t*0.41 + 2.2)*0.06];
     legs.forEach((set, i)=>{
       const k = Math.max(0, knee*(i===0 ? 1.0 : 0.88) + legPhase[i]);
-      pose.add(set[0], -k*0.45, 0, 0, bd);   // thigh forward
-      pose.add(set[1],  k,      0, 0, bd);   // shin back (knee flexes)
-      pose.add(set[2], -k*0.55, 0, 0, bd);   // ankle keeps the foot flat
+      pose.add(set[0], -k*0.45, 0, 0);   // thigh forward
+      pose.add(set[1],  k,      0, 0);   // shin back (knee flexes)
+      pose.add(set[2], -k*0.55, 0, 0);   // ankle keeps the foot flat
     });
     // sink the hips as the knees flex so the body bobs instead of the feet sliding
-    S.hipsDrop = -knee * rig.legLength * CONFIG.HIP_DROP * 0.5 * bd;
+    S.hipsDrop = -knee * rig.legLength * CONFIG.HIP_DROP * 0.5;
 
     // subtle weight-shift so the body isn't statue-still
     pose.add('hips', 0, Math.sin(this.t*0.5)*0.02, Math.sin(this.t*0.4)*0.025);
@@ -756,260 +747,6 @@ const reactions = {
 };
 
 /* ===========================================================================
-   Pick him up.  A long press ON the avatar grabs him; dragging swings him
-   around under your finger; letting go drops him.
-
-   The grip is PINNED, not parented. Each frame we work out where the grabbed
-   point currently sits in root space, then place the root so that point lands
-   under your finger. The pivot is therefore wherever you actually grabbed —
-   scruff, paw, tail — with no reparenting and nothing for the VRM hierarchy to
-   fight over, and the pin holds even while the limb it's attached to flails.
-
-   Where you grab decides the mood. By the scruff he goes limp and content the
-   way a kitten does; by a foot he ends up upside down and deeply unimpressed.
-   =========================================================================== */
-const GRIP_KIND = {
-  ears:'scruff', head:'scruff', nose:'scruff', cheekL:'scruff', cheekR:'scruff', chest:'scruff',
-  belly:'body',  groin:'body',  handL:'body',  handR:'body',    armL:'body',    armR:'body',
-  thighL:'foot', thighR:'foot', footL:'foot',  footR:'foot',    tail:'foot',
-};
-
-// Touch zones name a humanoid bone (or the discovered tail/ear chains); the pin
-// needs the actual RAW node, since that's what carries a usable world matrix.
-function gripNode(zone){
-  if (zone.bone === 'tail')     return rig.tail[0] || rig.raw.hips || null;
-  if (zone.bone === 'ears')     return rig.ears[0] || rig.raw.head || null;
-  if (zone.bone === 'midTorso') return rig.raw.spine || rig.raw.chest || rig.raw.hips || null;
-  return rig.raw[zone.bone] || null;
-}
-
-const _hV = new THREE.Vector3(), _hP = new THREE.Vector3();
-const _hRight = new THREE.Vector3(), _hFwd = new THREE.Vector3();
-const _hQa = new THREE.Quaternion(), _hQb = new THREE.Quaternion(), _hQc = new THREE.Quaternion();
-const _hZero = new THREE.Vector3();
-const LAND_TIME = 0.45;            // seconds of landing squash
-
-const hold = {
-  state:null,                      // null | 'held' | 'falling' | 'landed'
-  kind:'body',
-  node:null,                       // raw bone the finger is pinched onto
-  grip:new THREE.Vector3(),        // grip point, in THAT BONE's local space
-  target:new THREE.Vector3(),      // finger position, world space
-  vel:new THREE.Vector3(),         // finger velocity held / body velocity falling
-  pos:new THREE.Vector3(),         // root world position — we own it while active
-  home:new THREE.Quaternion(),     // root rotation to return to (FACE_FLIP lives here)
-  swing:{ x:0, z:0, vx:0, vz:0 },  // pendulum: angle + angular velocity
-  flip:0,                          // 0..1 blend into upside-down
-  gain:0,                          // 0..1 weight of the whole hold layer
-  t:0,                             // seconds in the current state
-  land:0,                          // landing squash timer, counts down
-  impact:0,                        // touchdown speed 0..1, drives the squash depth
-  dirty:false,                     // root transform is ours; needs clearing when we finish
-
-  grab(zone, point){
-    if (!S.vrm || settings.pickup === false || this.state) return false;
-    const n = gripNode(zone);
-    if (!n) return false;
-    this.node = n;
-    this.grip.copy(point); n.worldToLocal(this.grip);
-    this.kind = GRIP_KIND[zone.name] || 'body';
-    this.state = 'held'; this.t = 0; this.land = 0; this.impact = 0;
-    this.target.copy(point);
-    this.vel.set(0,0,0);
-    this.swing.x = this.swing.z = this.swing.vx = this.swing.vz = 0;
-    this.home.copy(S.vrm.scene.quaternion);
-    this.pos.copy(S.vrm.scene.position);
-    reactions.clear();          // whatever he was mid-way through, he's airborne now
-    gestures.fadeOut();
-    return true;
-  },
-
-  // Called from input.js on every pointermove, with the finger projected onto
-  // the plane he was grabbed on. Velocity is measured HERE rather than in
-  // update() because pointer events arrive faster than frames on most phones —
-  // sampling per frame throws away most of the flick you're trying to capture.
-  moveTo(point, dt){
-    if (this.state !== 'held') return;
-    if (dt > 0.0005){
-      _hV.copy(point).sub(this.target).divideScalar(dt);
-      this.vel.lerp(_hV, 1 - Math.pow(0.02, Math.min(dt, 0.05)));
-    }
-    this.target.copy(point);
-  },
-
-  release(){
-    if (this.state !== 'held') return;
-    this.state = 'falling'; this.t = 0;
-    if (this.vel.length() > CONFIG.HOLD_FLING_MAX) this.vel.setLength(CONFIG.HOLD_FLING_MAX);
-  },
-
-  // Pendulum step. Driven by the finger's velocity resolved onto SCREEN axes:
-  // the swing has to match the direction you see yourself dragging, not the
-  // avatar's own facing. Semi-implicit Euler, dt clamped so a dropped frame
-  // can't blow the spring up.
-  stepSwing(dt, driven){
-    const h = Math.min(dt, 0.033);
-    const K = CONFIG.HOLD_SWING_SPRING, C = CONFIG.HOLD_SWING_DAMP, M = CONFIG.HOLD_SWING_MAX;
-    let tz = 0, tx = 0;
-    if (driven){
-      _hRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
-      // NEGATED: drag right and his top should trail LEFT. Flip this one sign if
-      // he ever leans into the drag instead of away from it.
-      tz = THREE.MathUtils.clamp(-this.vel.dot(_hRight) * CONFIG.HOLD_SWING, -M, M);
-      tx = THREE.MathUtils.clamp(this.vel.y * CONFIG.HOLD_SWING * 0.5, -M*0.5, M*0.5);
-    }
-    this.swing.vz += (K*(tz - this.swing.z) - C*this.swing.vz) * h;
-    this.swing.vx += (K*(tx - this.swing.x) - C*this.swing.vx) * h;
-    this.swing.z  += this.swing.vz * h;
-    this.swing.x  += this.swing.vx * h;
-  },
-
-  update(dt){
-    const airborne = (this.state === 'held' || this.state === 'falling');
-    const fade = 1 - Math.pow(0.001, dt / Math.max(0.02, CONFIG.HOLD_FADE));
-    this.gain += ((airborne ? 1 : 0) - this.gain) * fade;
-    idle.body = 1 - this.gain;        // hand the limbs over / take them back
-    if (this.land > 0) this.land -= dt;
-
-    if (this.state === 'held'){
-      this.t += dt;
-      const wantFlip = (this.kind === 'foot') ? 1 : 0;
-      this.flip += (wantFlip - this.flip) * (1 - Math.pow(0.02, dt));
-      this.stepSwing(dt, true);
-    }
-    else if (this.state === 'falling'){
-      this.t += dt;
-      this.vel.y -= CONFIG.HOLD_GRAVITY * dt;
-      this.pos.addScaledVector(this.vel, dt);
-      this.flip *= Math.pow(0.004, dt);     // rights himself mid-air: always lands on his feet
-      this.stepSwing(dt, false);
-      if (this.pos.y <= 0){
-        this.pos.y = 0;
-        // Divisor set from the visible world height (~0.45m): a gentle set-down
-        // lands well under 0.6, while a drop from the top of the screen or a
-        // downward fling clears it. Lower it and he's dizzy every single time.
-        this.impact = Math.min(1, Math.abs(this.vel.y) / 4.0);
-        this.vel.set(0,0,0);
-        this.state = 'landed'; this.t = 0; this.land = LAND_TIME;
-        // The landing sells itself better through an existing reaction than a
-        // bespoke one: hard drop = dizzy, dropped on his head = indignant.
-        reactions.fire(this.impact > 0.60 ? 'dizzy' : (this.kind === 'foot' ? 'fluster' : 'happy'));
-      }
-    }
-    else if (this.state === 'landed'){
-      this.t += dt;
-      this.pos.lerp(_hZero, 1 - Math.pow(0.02, dt));   // scampers back to his spot
-      this.flip *= Math.pow(0.001, dt);
-      this.stepSwing(dt, false);
-      if (this.t > CONFIG.HOLD_RECOVER){ this.state = null; this.node = null; }
-    }
-
-    /* ---- pose layer -------------------------------------------------------
-       Everything here is ABSOLUTE, because idle.body has faded the resting
-       stance out from under it. Left arm takes +Z to hang, right arm -Z. */
-    const g = this.gain;
-    if (g <= 0.002) return;
-    const t = this.t, F = CONFIG.HOLD_FLAIL;
-    const calm = this.kind === 'scruff', rage = this.kind === 'foot';
-    const A = CONFIG.ARM_DOWN, O = CONFIG.ARM_OUT, E = CONFIG.ELBOW_BEND;
-    const settle = Math.max(0, 1 - t/2.2);            // the startle wears off
-    const energy = rage ? (0.55 + 0.45*settle) : calm ? 0.10 : (0.25 + 0.5*settle);
-
-    // Four different frequencies so no two limbs ever pump in unison.
-    const f1 = Math.sin(t*14.0), f2 = Math.sin(t*15.7 + 2.1);
-    const f3 = Math.sin(t*12.5 + 1.1), f4 = Math.sin(t*13.9 + 3.4);
-
-    // arms hang from the shoulder, then flail about that
-    pose.add('leftUpperArm',  f3*F*energy*0.35, -0.05, A - O*0.35 + f1*F*energy*0.55, g);
-    pose.add('rightUpperArm', f4*F*energy*0.35,  0.05, -(A - O*0.35 + f2*F*energy*0.55), g);
-    pose.add('leftLowerArm',  0, -(E*0.5 + Math.max(0,f2)*F*energy*0.8), 0, g);
-    pose.add('rightLowerArm', 0,  (E*0.5 + Math.max(0,f1)*F*energy*0.8), 0, g);
-    pose.add('leftHand',  f2*0.25*energy, 0, 0, g);
-    pose.add('rightHand', f1*0.25*energy, 0, 0, g);
-
-    // legs dangle straight, and kick when he objects
-    const kick = F*energy*0.75;
-    pose.add('leftUpperLeg',  -0.06 + f3*kick*0.6, 0,  0.04, g);
-    pose.add('rightUpperLeg', -0.06 + f4*kick*0.6, 0, -0.04, g);
-    pose.add('leftLowerLeg',   0.10 + Math.max(0,-f3)*kick, 0, 0, g);
-    pose.add('rightLowerLeg',  0.10 + Math.max(0,-f4)*kick, 0, 0, g);
-
-    // spine curls up when he's cross, hangs slack when he's happy about it
-    const curl = rage ? (0.16 + 0.12*settle) : calm ? -0.05 : 0.06;
-    pose.add('spine', curl,      f1*0.05*energy, 0, g);
-    pose.add('chest', curl*0.7,  f2*0.04*energy, 0, g);
-    pose.add('neck', -curl*0.5,  0, 0, g);
-    // +X on the head is chin-DOWN. Calm droops; cross cranes back to glare at you.
-    pose.add('head', calm ? 0.10 : (-0.14 - 0.08*settle), f2*0.10*energy, f1*0.08*energy, g);
-
-    if (rage){
-      setExpr('surprised', (0.45 + 0.35*settle)*g);
-      setExpr('browDown',  0.85*g);
-      setExpr('blush',     0.35*g);
-    } else if (calm){
-      setExpr('smile',     0.55*g);
-      setExpr('smileEyes', 0.45*g);
-      setExpr('happy',     0.25*g);
-    } else {
-      setExpr('surprised', (0.15 + 0.60*settle)*g);
-      setExpr('browUp',    0.50*g);
-      setExpr('smile',     0.30*(1-settle)*g);
-    }
-    earImpulse  = Math.max(earImpulse, (rage ? 0.9 : calm ? 0.15 : 0.5) * energy * g);
-    gestureTail = Math.max(gestureTail, (rage ? 1.0 : calm ? 0.25 : 0.6) * g);
-  },
-};
-
-/* Root transform for the hold. Runs AFTER S.vrm.update() so the bone world
-   matrices it reads are the posed ones. Both reads use last frame's matrices
-   consistently, so the old root transform cancels exactly — the one frame of
-   lag is invisible at any sane framerate. */
-function applyHoldRoot(){
-  if (!S.vrm) return;
-  const root = S.vrm.scene;
-
-  if (!hold.state && hold.gain < 0.002){
-    if (hold.dirty){                       // hand the root back exactly as we found it
-      root.position.set(0,0,0);
-      root.quaternion.copy(hold.home);
-      root.scale.setScalar(1);
-      hold.dirty = false;
-    }
-    return;
-  }
-  hold.dirty = true;
-
-  // rotation: pendulum swing (screen axes) × upside-down flip (his own facing)
-  _hFwd.setFromMatrixColumn(camera.matrixWorld, 2).normalize();   // toward the viewer
-  _hRight.setFromMatrixColumn(camera.matrixWorld, 0).normalize();
-  _hQa.setFromAxisAngle(_hFwd,   hold.swing.z);
-  _hQb.setFromAxisAngle(_hRight, hold.swing.x);
-  if (hold.flip > 0.0005){
-    _hV.copy(rig.forward || _hFwd);
-    _hQc.setFromAxisAngle(_hV, Math.PI * hold.flip);
-  } else _hQc.identity();
-  root.quaternion.copy(_hQb).multiply(_hQa).multiply(_hQc).multiply(hold.home);
-
-  // landing squash — compress on Y, spread on XZ, settling as it decays
-  if (hold.land > 0){
-    const p = 1 - hold.land/LAND_TIME;                       // 0 → 1
-    const s = Math.sin(Math.PI*p) * hold.impact * 0.35 * (1-p);
-    root.scale.set(1 + s*0.6, 1 - s, 1 + s*0.6);
-  } else root.scale.setScalar(1);
-
-  if (hold.state === 'held' && hold.node){
-    // where the grip sits right now, expressed in root-local space
-    _hP.copy(hold.grip);
-    hold.node.localToWorld(_hP);
-    root.worldToLocal(_hP);
-    // ...then put the root wherever it needs to be for that point to meet the finger
-    _hP.multiply(root.scale).applyQuaternion(root.quaternion);
-    hold.pos.copy(hold.target).sub(_hP);
-  }
-  root.position.copy(hold.pos);
-}
-
-/* ===========================================================================
    Raycast a tap → nearest touch-zone anchor → reaction
    =========================================================================== */
 /* ===========================================================================
@@ -1042,4 +779,4 @@ export function decayImpulses(dt){
 hooks.onShake = ()=> reactions.fire('dizzy');
 
 export { applyHipsDrop, idle, GESTURES, GESTURE_LIST, gestures, reactions, petting, particles,
-         applyTailPose, applyEarPose, hold, applyHoldRoot };
+         applyTailPose, applyEarPose };
