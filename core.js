@@ -10,6 +10,7 @@ export { THREE };
 export const S = {
   vrm:null, lastBuffer:null, lastName:'', hipsDrop:0, allMorphNames:[],
   lastInteract:0, frameScale:1, frameReady:false, camHeightSync:null,
+  acc:0,          // battery-saver frame accumulator (shared with the UI toggle)
 };
 
 // Lets low-level modules call into the UI/animation without importing them.

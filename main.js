@@ -2,15 +2,14 @@
 import { THREE, S, rig, settings, scene, camera, renderer, controls, clock, resize,
          toast, showOverlay, showError, idbGet, motion, enableMotion } from './core.js';
 import { CONFIG } from './config.js';
-import { pose, flushExpr, applyHipsDrop } from './pose.js';
+import { pose, flushExpr } from './pose.js';
 import { idle, gestures, reactions, petting, particles, applyTailPose, applyEarPose,
-         decayImpulses } from './anim.js';
+         decayImpulses, applyHipsDrop } from './anim.js';
 import { clampCameraTarget, applyView, updateParallax, renderScene } from './camera.js';
 import { updateZoneDebug } from './input.js';
 import { mountVRM } from './avatar.js';
 import { applySettings, applyCamLock, syncFullscreenClass, acquireWake, motionNote, els } from './ui.js';
 
-let acc=0;
 function loop(){
   requestAnimationFrame(loop);
   const raw = Math.min(clock.getDelta(), 0.05);     // clamp after tab switches
@@ -29,7 +28,7 @@ function loop(){
   // battery saver: throttle animation + render to 30fps, but animate with the
   // *accumulated* elapsed time so motion speed stays correct.
   let dt = raw;
-  if (settings.saver){ acc += raw; if (acc < 1/30) return; dt = acc; acc = 0; }
+  if (settings.saver){ S.acc += raw; if (S.acc < 1/30) return; dt = S.acc; S.acc = 0; }
 
   if (S.vrm){
     pose.clear();

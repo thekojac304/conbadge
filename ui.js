@@ -39,7 +39,7 @@ function applySettings(){
 els.inName.addEventListener('input', e=>{ settings.name=e.target.value; applySettings(); saveSettings(); });
 els.inPro.addEventListener('input',  e=>{ settings.pronouns=e.target.value; applySettings(); saveSettings(); });
 els.tgPlate.addEventListener('change', e=>{ settings.showPlate=e.target.checked; applySettings(); saveSettings(); });
-els.tgSaver.addEventListener('change', e=>{ settings.saver=e.target.checked; acc=0; applySettings(); saveSettings(); });
+els.tgSaver.addEventListener('change', e=>{ settings.saver=e.target.checked; S.acc=0; applySettings(); saveSettings(); });
 els.bgA.addEventListener('input', e=>{ settings.bgA=e.target.value; applySettings(); saveSettings(); });
 els.bgB.addEventListener('input', e=>{ settings.bgB=e.target.value; applySettings(); saveSettings(); });
 

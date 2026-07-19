@@ -34,12 +34,7 @@ const pose = new PoseAccumulator();
 
 // Applies the bounce's hip sink. Rotations come from the accumulator; this is
 // the one place we touch a bone's position instead.
-function applyHipsDrop(){
-  if (rig.bones.hips && rig.hipsRest){
-    rig.bones.hips.position.copy(rig.hipsRest);
-    rig.bones.hips.position.y += S.hipsDrop + gestureHips;
-  }
-}
+
 
 // Expression driver — sets morph-target influences directly by semantic name.
 // (Converted VRMs often have no VRM expressions, so we bypass expressionManager.)
@@ -212,5 +207,5 @@ function scratchTarget(){
    Works while the camera is locked, since it isn't user control.
 --------------------------------------------------------------------------- */
 
-export { pose, PoseAccumulator, applyHipsDrop, setExpr, flushExpr, envelope, easeInOut,
+export { pose, PoseAccumulator, setExpr, flushExpr, envelope, easeInOut,
          armBase, armReach, scratchTarget, anchorWorld, raycaster, ndc };

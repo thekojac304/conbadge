@@ -707,6 +707,16 @@ const reactions = {
    explicit permission prompt triggered by a user tap.
    =========================================================================== */
 
+// Applies the idle bounce's hip sink plus any gesture-requested lift. Rotations
+// come from the pose accumulator; this is the one place we touch a bone's
+// POSITION. Lives here rather than in pose.js because it reads gestureHips.
+function applyHipsDrop(){
+  if (rig.bones.hips && rig.hipsRest){
+    rig.bones.hips.position.copy(rig.hipsRest);
+    rig.bones.hips.position.y += S.hipsDrop + gestureHips;
+  }
+}
+
 // Gesture-driven impulses decay each frame; gestures re-assert them while active.
 export function decayImpulses(dt){
   const decay = Math.exp(-dt*5);
@@ -719,5 +729,5 @@ export function decayImpulses(dt){
 // shake -> dizzy, wired here so core.js never has to import anim.js
 hooks.onShake = ()=> reactions.fire('dizzy');
 
-export { idle, GESTURES, GESTURE_LIST, gestures, reactions, petting, particles,
+export { applyHipsDrop, idle, GESTURES, GESTURE_LIST, gestures, reactions, petting, particles,
          applyTailPose, applyEarPose };

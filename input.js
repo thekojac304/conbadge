@@ -97,7 +97,7 @@ renderer.domElement.addEventListener('pointerdown', (ev)=>{
 });
 
 function exitPlayMode(){
-  setMode('setup');
+  hooks.setMode?.('setup');
   hideExitChip();
   toast('Setup mode', 2000);
 }
