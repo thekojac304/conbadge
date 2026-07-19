@@ -1,6 +1,6 @@
 // Con Badge — tuning constants and the touch-zone map.
 export const CONFIG = {
-  BUILD: 'b36',            // bump on each new version — shown in the load readout
+  BUILD: 'b37',            // bump on each new version — shown in the load readout
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
   ORBIT_AZIMUTH: 0.62,     // rad: how far left/right you can orbit (clamped both ways)
   ORBIT_POLAR_LO: 1.12,    // rad from +Y: how far you can look down over the top
@@ -31,6 +31,11 @@ export const CONFIG = {
   BLINK_MAX: 0.9,          // max eyelid weight; lower if the lids clip through the face
   IDLE_SMILE: 0.16,        // baseline resting smile (0 = fully neutral face)
   TAIL_CURL_AXIS: 'x',     // axis the tail curls on ('x' pitch up/down, 'z' side) — flip if wrong
+  TAIL_WAG_AXIS: 'auto',   // axis the wag/sway SWINGS on. 'auto' = the bending axis the
+                           // curl isn't using. Y is deliberately never the default: on this
+                           // rig (and most VRM tails) Y runs ALONG the bone, so rotating
+                           // there twists the tail on its own axis and looks like nothing
+                           // is happening. Force 'x'/'y'/'z' only if 'auto' picks wrong.
   TAIL_CURL_SIGN: -1,      // which way is "up over the back" (negative was correct on this rig)
   TAIL_CURL_MAX: 2.9,      // total radians of curl at slider 100
   TAIL_CURL_SPLAY: 0.32,   // sideways lean added as it curls, so it clears the back

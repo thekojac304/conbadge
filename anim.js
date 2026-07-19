@@ -440,6 +440,11 @@ function applyTailPose(time){
   wagPhase += wdt * (8.5 + 5.5*wagAmt);              // 1.4 Hz idling → 2.2 Hz thrilled
   if (wagPhase > Math.PI*2) wagPhase -= Math.PI*2;   // keep precision bounded
 
+  // Whichever bending axis the curl isn't using is the one that swings.
+  const wagAxis = (CONFIG.TAIL_WAG_AXIS && CONFIG.TAIL_WAG_AXIS !== 'auto')
+    ? CONFIG.TAIL_WAG_AXIS
+    : (CONFIG.TAIL_CURL_AXIS === 'z' ? 'x' : 'z');
+
   // Distribute the curl so each joint bends MORE than the last — that's what
   // makes the tail coil rather than arc as one stiff banana.
   let wsum = 0; const ws = [];
@@ -463,9 +468,20 @@ function applyTailPose(time){
 
     const c = curl * CONFIG.TAIL_CURL_MAX * CONFIG.TAIL_CURL_SIGN * w;
     const s = side*1.4*w + splay;
-    const x = (CONFIG.TAIL_CURL_AXIS === 'z') ? s : c;
-    const z = (CONFIG.TAIL_CURL_AXIS === 'z') ? c : s;
-    _te.set(x, sway + swish + wag, z, 'XYZ'); _tq.setFromEuler(_te);
+
+    // Curl and side-lean own the two BENDING axes. Everything animated has to
+    // ride the side-lean axis with them — it used to go on the leftover axis
+    // (Y), which runs along the bone on this rig, so the wag was a twist about
+    // the tail's own length: fully computed, completely invisible. applyEarPose
+    // avoids Y for exactly this reason.
+    const swingAmt = sway + swish + wag;
+    let ex = 0, ey = 0, ez = 0;
+    if (CONFIG.TAIL_CURL_AXIS === 'z'){ ez = c; ex = s; } else { ex = c; ez = s; }
+    if      (wagAxis === 'x') ex += swingAmt;
+    else if (wagAxis === 'y') ey += swingAmt;
+    else                      ez += swingAmt;
+
+    _te.set(ex, ey, ez, 'XYZ'); _tq.setFromEuler(_te);
     rig.tail[i].quaternion.copy(rig.tailRest[i]).multiply(_tq);
   }
 }
