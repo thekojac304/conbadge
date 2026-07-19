@@ -452,7 +452,7 @@ import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
    CONFIG — the knobs you'll actually tune per avatar
    =========================================================================== */
 const CONFIG = {
-  BUILD: 'b23',            // bump on each new version — shown in the load readout
+  BUILD: 'b24',            // bump on each new version — shown in the load readout
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
   ORBIT_AZIMUTH: 0.62,     // rad: how far left/right you can orbit (clamped both ways)
   ORBIT_POLAR_LO: 1.12,    // rad from +Y: how far you can look down over the top
@@ -490,6 +490,7 @@ const CONFIG = {
   DEBUG: false,            // draw skeleton/geometry bounds + axes to diagnose framing
   SOLID_DEBUG: false,      // paint every mesh a flat bright color (isolates geometry vs material)
   ZONE_DEBUG: false,       // draw a dot at every touch-zone anchor (set true to tune zones)
+  ATTACH_LOOSE: true,      // re-parent unskinned meshes (rigid accessories) to the nearest bone
   SHAKE_THRESHOLD: 14,     // m/s² of jolt needed to trigger dizzy (lower = more sensitive)
   SHAKE_COOLDOWN: 3000,    // ms before another shake can register
   TILT_LEAN: 0.55,         // how much he counter-leans when the phone tilts (0 = off)
@@ -692,6 +693,46 @@ const MORPH_PATTERNS = {
 };
 const MORPH_MULTI = new Set(['blink']);   // semantics that keep ALL matches
 
+/* ---------------------------------------------------------------------------
+   Some conversions leave rigid accessories (props, armour plates, sleeves)
+   unskinned AND unparented from any bone — they render frozen at their bind
+   position while the body animates around them. If we find such a mesh, attach
+   it to the closest bone so it at least travels with that body part.
+   Object3D.attach() preserves world transform, so nothing jumps on load.
+   NOTE: a garment that should DEFORM can't be fixed this way — it'll move
+   rigidly with one bone. That needs re-weighting in the original export.
+--------------------------------------------------------------------------- */
+function attachLooseMeshes(v){
+  const bones = [];
+  v.scene.traverse(o=>{ if(o.isBone) bones.push(o); });
+  if(!bones.length) return [];
+
+  const loose = [];
+  v.scene.traverse(o=>{
+    if(!o.isMesh || o.isSkinnedMesh) return;
+    let p = o.parent, underBone = false;
+    while(p){ if(p.isBone){ underBone = true; break; } p = p.parent; }
+    if(!underBone) loose.push(o);
+  });
+
+  const wp = new THREE.Vector3(), bp = new THREE.Vector3();
+  const attached = [];
+  for (const m of loose){
+    if(!m.geometry) continue;
+    if(!m.geometry.boundingBox) m.geometry.computeBoundingBox();
+    m.geometry.boundingBox.getCenter(wp);
+    m.localToWorld(wp);
+    let best = null, bd = Infinity;
+    for (const b of bones){
+      b.getWorldPosition(bp);
+      const dd = bp.distanceToSquared(wp);
+      if (dd < bd){ bd = dd; best = b; }
+    }
+    if (best){ best.attach(m); attached.push((m.name||'?')+'→'+(best.name||'?')); }
+  }
+  return attached;
+}
+
 function stripAllMorphs(v){
   v.scene.traverse(o=>{
     if(o.isMesh && o.geometry?.morphAttributes?.position){
@@ -838,12 +879,18 @@ async function mountVRM(buffer, filename){
     if(!o.isMesh) return;
     o.frustumCulled = false;
     const geo = o.geometry;
-    const nm = (o.name||'?').replace(/[^\w]/g,'').slice(0,8);
+    const nm = (o.name||'?').replace(/[^\w]/g,'').slice(0,7);
     const verts  = geo?.attributes?.position?.count ?? 0;
     const morphs = geo?.morphAttributes?.position?.length ?? 0;
     const bones  = o.skeleton?.bones?.length ?? 0;
-    const attrs  = geo ? Object.keys(geo.attributes).length : 0;
-    meshDiag.push(`${nm} v${verts} mo${morphs} b${bones} a${attrs}`);
+    // Sk = skinned (follows the skeleton), Me = rigid mesh. A rigid mesh that
+    // isn't parented under a bone can't animate at all — that's the "clothes
+    // just float there" case.
+    const kind = o.isSkinnedMesh ? 'Sk' : 'Me';
+    let p=o.parent, underBone=false;
+    while(p){ if(p.isBone){ underBone=true; break; } p=p.parent; }
+    const par = o.isSkinnedMesh ? '' : (underBone ? '+bone' : '+ROOT');
+    meshDiag.push(`${nm} ${kind}${par} v${verts} mo${morphs} b${bones}`);
 
     if (CONFIG.SOLID_DEBUG){
       o.material = new THREE.MeshBasicMaterial({ color: SOLID[solidIdx++ % SOLID.length], side: THREE.DoubleSide });
@@ -867,6 +914,15 @@ async function mountVRM(buffer, filename){
     if (CONFIG.KEEP_EXPRESSIONS) setupMorphs(v);
     else stripAllMorphs(v);
   } catch(e){ console.warn('[conbadge] morph setup failed, stripping', e); stripAllMorphs(v); }
+
+  // Rescue rigid accessories that aren't skinned or parented to a bone.
+  attachedInfo = '';
+  if (CONFIG.ATTACH_LOOSE){
+    try{
+      const at = attachLooseMeshes(v);
+      if (at.length){ attachedInfo = ' · attached '+at.length; console.log('[conbadge] attached loose meshes:', at); }
+    }catch(e){ console.warn('[conbadge] loose-mesh attach failed', e); }
+  }
 
   scene.add(v.scene);
   vrm = v;
@@ -957,7 +1013,7 @@ async function mountVRM(buffer, filename){
   let springCount = 0;
   try{ v.springBoneManager?.joints?.forEach(()=>springCount++); }catch{}
   const info =
-    `VRM ${ver} · ${CONFIG.BUILD} · meshes ${visMesh}/${meshCount} · ${morphInfo}\n`+
+    `VRM ${ver} · ${CONFIG.BUILD} · meshes ${visMesh}/${meshCount}${attachedInfo}\n${morphInfo}\n`+
     meshDiag.join('\n')+`\n`+
     `face: ${Object.keys(rig.morphs||{}).filter(k=>rig.morphs[k]?.length).join(',')||'none'}\n`+
     `tail ${rig.tail.length} ears ${rig.ears.length} springs ${springCount}`;
@@ -1032,6 +1088,7 @@ function saveCamOffset(){
 }
 let meshDiag = [];
 let morphInfo = '';
+let attachedInfo = '';
 let allMorphNames = [];       // every morph name on the current avatar (for the panel)
 let lastBuffer = null, lastName = '';   // cached so we can re-mount when morph settings change
 
