@@ -5,9 +5,9 @@ import { pose, setExpr, envelope, armBase, armReach, scratchTarget, anchorWorld 
 
 const idle = {
   t:0, blinkIn:rand(2,5), blinkT:-1, gaze:{x:0,y:0}, gazeTarget:{x:0,y:0}, gazeIn:rand(1.2,3),
-  faceT:-1, faceIn:rand(3,8), faceKind:null,
+  faceT:-1, faceIn:rand(3,8), faceKind:null, armSteady:0,
   reset(){ this.t=0; this.blinkIn=rand(2,5); this.blinkT=-1; this.gaze={x:0,y:0}; this.gazeTarget={x:0,y:0}; this.gazeIn=rand(1.2,3);
-           this.faceT=-1; this.faceIn=rand(3,8); this.faceKind=null; },
+           this.faceT=-1; this.faceIn=rand(3,8); this.faceKind=null; this.armSteady=0; },
   update(dt){
     this.t += dt;
 
@@ -20,18 +20,28 @@ const idle = {
     const flexL = Math.sin(this.t*0.43 + 1.9)*0.13, flexR = Math.sin(this.t*0.37 + 0.6)*0.13;
     const br = Math.sin(this.t*1.9)*0.5+0.5;      // shared breathing phase
 
+    // When a reaction poses the arms to a fixed target (the fluster cover), the
+    // idle sine WOBBLE on the arms keeps modulating them on top — the per-breath
+    // elbow flex in particular swings the hands in and out in DEPTH, so a pose
+    // tuned to hover just off the body clips on some frames and floats on others.
+    // Damp only the wobble (not the static resting pose the reaction is authored
+    // against) while such a reaction is active, eased so it doesn't pop.
+    const wantSteady = (tuner.active || (reactions.active && reactions.kind==='fluster')) ? 1 : 0;
+    this.armSteady += (wantSteady - this.armSteady) * (1 - Math.pow(0.02, dt));
+    const wob = 1 - this.armSteady*0.85;          // → ~0.15 while steadying
+
     // shoulders lift a little with each breath
     pose.add('leftShoulder',  0, 0,  br*0.035);
     pose.add('rightShoulder', 0, 0, -br*0.035);
     // upper arms: splay + slow forward/back swing + breathing
-    pose.add('leftUpperArm',  0, -F + swingL,  A - O + swayL + br*0.02);
-    pose.add('rightUpperArm', 0,  F - swingR, -A + O - swayR - br*0.02);
+    pose.add('leftUpperArm',  0, -F + swingL*wob,  A - O + (swayL + br*0.02)*wob);
+    pose.add('rightUpperArm', 0,  F - swingR*wob, -A + O - (swayR + br*0.02)*wob);
     // elbows breathe open and closed instead of holding one fixed angle
-    pose.add('leftLowerArm',  0, -(E + flexL), 0);
-    pose.add('rightLowerArm', 0,  (E + flexR), 0);
+    pose.add('leftLowerArm',  0, -(E + flexL*wob), 0);
+    pose.add('rightLowerArm', 0,  (E + flexR*wob), 0);
     // wrists drift so the hands aren't rigid blocks
-    pose.add('leftHand',  swayL*0.8, -0.08 + flexL*0.3,  swayL*0.5);
-    pose.add('rightHand', swayR*0.8,  0.08 - flexR*0.3, -swayR*0.5);
+    pose.add('leftHand',  swayL*0.8*wob, -0.08 + flexL*0.3*wob,  swayL*0.5*wob);
+    pose.add('rightHand', swayR*0.8*wob,  0.08 - flexR*0.3*wob, -swayR*0.5*wob);
 
     // Knees: a soft resting flex plus a slow bounce. Bending a knee needs three
     // joints working together or the pose breaks — the thigh swings forward
@@ -350,8 +360,8 @@ const GESTURES = {
 const GESTURE_LIST = Object.keys(GESTURES);
 
 const gestures = {
-  cur:null, t:0, dur:0, gain:0, gainTarget:0, next:rand(8,20),
-  reset(){ this.cur=null; this.t=0; this.gain=0; this.gainTarget=0; this.next=rand(4,9); },
+  cur:null, t:0, dur:0, gain:0, gainTarget:0, next:rand(8,20), _hold:false,
+  reset(){ this.cur=null; this.t=0; this.gain=0; this.gainTarget=0; this.next=rand(4,9); this._hold=false; },
   start(name){ this.cur=name; this.t=0;
     this.dur = ({ wave:2.6, stretch:4.0, footShuffle:3.4, lookAround:3.6, headTilt:2.6,
                   scratchHead:3.0, shake:1.5, weightShift:4.0, sniff:2.6,
@@ -364,8 +374,8 @@ const gestures = {
     const r = 1-Math.pow(0.0001, dt);
     this.gain += (this.gainTarget-this.gain)*r;
     if (this.cur){
-      this.t += dt;
-      if (this.t>=this.dur){ this.cur=null; this.next=rand(8,20); this.gainTarget=1; }
+      if (!this._hold) this.t += dt;   // tuner freezes time so the pose holds
+      if (!this._hold && this.t>=this.dur){ this.cur=null; this.next=rand(8,20); this.gainTarget=1; }
       else if (this.gain>0.001){
         // temporarily scale accumulator writes by gain via a wrapper
         const add = pose.add.bind(pose), tw = pose.twist.bind(pose);
@@ -378,6 +388,7 @@ const gestures = {
       this.next -= dt;
       if (this.next<=0) this.start(GESTURE_LIST[(Math.random()*GESTURE_LIST.length)|0]);
     }
+    applyTuner();      // additive per-bone offsets from the on-screen Tuner
   }
 };
 
@@ -606,14 +617,32 @@ const petting = {
 };
 
 /* ===========================================================================
+   Fluster (groin-cover) live-tuning params. Every bone offset in the fluster
+   arm/torso pose reads from here so the on-screen Cover Tuner can drive them at
+   full strength and print values to paste back in. Defaults ARE the baked pose.
+   =========================================================================== */
+const flusterDebug = {
+  chestHunch:      -0.18,   // chest X  (more negative = curl further forward)
+  spineHunch:      -0.15,   // spine X
+  shoulderFwd:      0.20,   // shoulders Y (mirrored) — protraction / forward
+  leftUpperSwing:  -0.77,   // left  upperArm Y (forward-swing to front-centre)
+  rightUpperSwing:  0.24,   // right upperArm Y
+  leftUpperDown:   -0.40,   // left  upperArm Z (down-angle → hand height)
+  rightUpperDown:   0.01,   // right upperArm Z
+  leftElbow:       -0.49,   // left  lowerArm Y (elbow fold / cross)
+  rightElbow:       0.54,   // right lowerArm Y
+  handPitch:        0.00,   // both hands X (mirrored) — tilt fingertips off body
+};
+
+/* ===========================================================================
    Touch reactions.  A reaction owns humanoid offsets (pre-update, via pose),
    expression targets, tail/ear overrides (post-update), and scale pulses.
    A new tap replaces the current reaction and fades gestures out cleanly.
    =========================================================================== */
 const reactions = {
-  active:null, t:0, dur:0, kind:null, side:null,
+  active:null, t:0, dur:0, kind:null, side:null, _hold:false,
   scalePulse:0,               // giggle squash envelope 0..1
-  clear(){ this.active=null; this.t=0; this.kind=null; this.side=null; this.scalePulse=0; this._sparked=false; if(S.vrm) S.vrm.scene.scale.setScalar(1); },
+  clear(){ this.active=null; this.t=0; this.kind=null; this.side=null; this.scalePulse=0; this._sparked=false; this._hold=false; if(S.vrm) S.vrm.scene.scale.setScalar(1); },
   fire(kind, side){
     this.kind=kind; this.side=side; this.t=0; this.active=true; this._sparked=false;
     this.dur = ({ happy:CONFIG.TAIL_WAG_SECONDS, blush:2.0, giggle:1.3, wave:2.4,
@@ -622,8 +651,9 @@ const reactions = {
   },
   update(dt){
     if(!this.active) return;
-    this.t += dt;
-    const t=this.t, d=this.dur, e=envelope(t,d,0.15,0.3);
+    // Tuner holds the pose frozen at full strength (time paused) for live tuning.
+    if (!this._hold) this.t += dt;
+    const t=this.t, d=this.dur, e = this._hold ? 1 : envelope(t,d,0.15,0.3);
 
     if (this.kind==='happy'){
       // full-face smile: mouth + eyes + brows together, which reads far more
@@ -661,17 +691,39 @@ const reactions = {
       setExpr('browUp',    0.55*e);
       pose.add('head',  -0.16*e - jolt*0.14, 0.24*e, 0.05*e);   // recoils, looks away
       pose.add('neck',  -0.09*e, 0.13*e, 0);
-      pose.add('chest',  0.11*e + jolt*0.05, 0.09*e, 0);        // curls away
-      pose.add('spine',  0.08*e, 0, 0);
-      pose.add('hips',   0.05*e, 0, 0);
-      // Hands come FORWARD to cover, not inward — pulling them toward the
-      // body just buried the arms in the thighs.
-      pose.add('leftUpperArm',  0, -0.55*e, -0.14*e);
-      pose.add('rightUpperArm', 0,  0.55*e,  0.14*e);
-      pose.add('leftLowerArm',  0, -0.75*e, 0);
-      pose.add('rightLowerArm', 0,  0.75*e, 0);
-      pose.add('leftHand',      0, -0.20*e, 0);
-      pose.add('rightHand',     0,  0.20*e, 0);
+      // On this rig POSITIVE X on the torso leans the body BACKWARD (the old
+      // "curls away" recoil was tipping it back). NEGATIVE X curls it forward,
+      // which is what an embarrassed hunch actually wants — and the forward
+      // curl does double duty: rotating the upper body forward swings the
+      // shoulders (and the hands hanging off them) forward and down, lifting
+      // them off the body surface and lowering them toward the groin. The
+      // brief startle jolt still snaps slightly the other way at t≈0.
+      // A stronger FORWARD hunch is the depth lever that actually works here:
+      // curling spine+chest forward rotates the whole upper body (shoulders and
+      // the arms hanging off them) forward ABOUT THE HIP BASE, so the hands
+      // swing forward off the groin — while the groin itself, down on the hips
+      // at the pivot, barely moves. Unlike the arm-joint rotations (which swing
+      // the arms out/spread/drop) and IK (armReach can't solve a cross-body
+      // centre target — it splays the arms out and behind), this moves the
+      // hands forward RELATIVE to the body it's covering, and reads as the
+      // embarrassed cringe. This is the dial for the clip. Brief startle jolt
+      // still snaps slightly the other way at t≈0.
+      // Every arm/torso offset reads from flusterDebug so the on-screen Cover
+      // Tuner can adjust them live and print values to bake back in. The X on
+      // chest/spine is the forward hunch (depth), shoulders protract forward,
+      // upper-arm Y/Z place the crossed hands, lower-arm Y is the elbow fold.
+      const D = flusterDebug;
+      pose.add('chest', D.chestHunch*e + jolt*0.06, 0.09*e, 0);   // curls forward over
+      pose.add('spine', D.spineHunch*e, 0, 0);
+      pose.add('hips',  -0.03*e, 0, 0);
+      pose.add('leftShoulder',  0,  D.shoulderFwd*e, 0);
+      pose.add('rightShoulder', 0, -D.shoulderFwd*e, 0);
+      pose.add('leftUpperArm',  0, D.leftUpperSwing*e,  D.leftUpperDown*e);
+      pose.add('rightUpperArm', 0, D.rightUpperSwing*e, D.rightUpperDown*e);
+      pose.add('leftLowerArm',  0, D.leftElbow*e, 0);
+      pose.add('rightLowerArm', 0, D.rightElbow*e, 0);
+      pose.add('leftHand',      D.handPitch*e, -0.15*e, -0.05*e);
+      pose.add('rightHand',     D.handPitch*e,  0.22*e,  0.08*e);
       // knees pinch together slightly
       pose.add('leftUpperLeg',  0, 0,  0.05*e);
       pose.add('rightUpperLeg', 0, 0, -0.05*e);
@@ -750,7 +802,7 @@ const reactions = {
       setExpr('happy', 0.5*e);
     }
 
-    if (t>=d){ this.clear(); }
+    if (t>=d && !this._hold){ this.clear(); }
   }
   // NOTE: tail and ear motion during reactions is handled by applyTailPose()
   // and applyEarPose(), so they layer with the curl setting and idle twitches
@@ -766,6 +818,45 @@ const reactions = {
    content:// page gets no sensor events at all. iOS additionally requires an
    explicit permission prompt triggered by a user tap.
    =========================================================================== */
+
+/* ===========================================================================
+   Universal animation Tuner. Holds any chosen gesture/reaction frozen at its
+   peak (envelope forced to 1, internal time paused so sines don't drift) and
+   adds per-bone rotational offsets on top. Lets any pose be nudged live in the
+   on-screen panel (ui.js), which prints the offsets to bake into the code.
+   Overrides are ADDITIVE deltas on the held animation's own pose.
+   =========================================================================== */
+const tuner = { active:false, kind:null, name:null, overrides:{} };
+
+function tunerHold(kind, name){
+  // stop whatever's playing, then hold the requested animation frozen at peak
+  gestures.cur = null; gestures._hold = false; gestures.gainTarget = 1;
+  reactions._hold = false; reactions.clear();
+  tuner.active = true; tuner.kind = kind; tuner.name = name;
+  if (kind === 'reaction'){
+    const [k, side] = name.split(':');
+    reactions.fire(k, side);
+    reactions.t = reactions.dur * 0.5;   // past the ease-in, sitting at full pose
+    reactions._hold = true;
+  } else {
+    gestures.start(name);
+    gestures.t = gestures.dur * 0.5;
+    gestures.gain = 1; gestures.gainTarget = 1;
+    gestures._hold = true;
+  }
+}
+function tunerRelease(){
+  tuner.active = false; tuner.name = null;
+  gestures._hold = false; gestures.cur = null; gestures.gainTarget = 1; gestures.next = rand(4,9);
+  reactions._hold = false; reactions.clear();
+}
+function applyTuner(){
+  if (!tuner.active) return;
+  for (const b in tuner.overrides){
+    const o = tuner.overrides[b];
+    if (o && (o[0] || o[1] || o[2])) pose.add(b, o[0], o[1], o[2]);
+  }
+}
 
 // Applies the idle bounce's hip sink plus any gesture-requested lift. Rotations
 // come from the pose accumulator; this is the one place we touch a bone's
@@ -790,4 +881,4 @@ export function decayImpulses(dt){
 hooks.onShake = ()=> reactions.fire('dizzy');
 
 export { applyHipsDrop, idle, GESTURES, GESTURE_LIST, gestures, reactions, petting, particles,
-         applyTailPose, applyEarPose };
+         applyTailPose, applyEarPose, tuner, tunerHold, tunerRelease };

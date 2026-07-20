@@ -5,7 +5,7 @@ import { THREE, S, rig, settings, saveSettings, camera, controls, hooks, toast,
 import { CONFIG } from './config.js';
 import { mountVRM } from './avatar.js';
 import { frameCamera, currentView, applyView, saveCamOffset, frameTarget } from './camera.js';
-import { gestures, reactions, GESTURE_LIST } from './anim.js';
+import { gestures, reactions, GESTURE_LIST, tuner, tunerHold, tunerRelease } from './anim.js';
 
 
 
@@ -128,6 +128,152 @@ const BG_PRESETS = [
   document.getElementById('btn-test').addEventListener('click', ()=>{
     bar.classList.toggle('show');
   });
+})();
+
+/* ---- Animation Tuner ----------------------------------------------------
+   Universal pose tuner. Pick any gesture or reaction; it holds that animation
+   frozen at its peak so it sits still, then per-bone X/Y/Z sliders add offsets
+   on top in real time. The readout prints the offsets as pose.add() deltas to
+   bake into the animation's code. A "Tuner" chip is appended to the test bar
+   (setup mode only). Offsets are ADDITIVE on the animation's own pose. */
+(function(){
+  const box = document.getElementById('test-chips');
+  if (!box) return;
+
+  // Animations the tuner can hold. Reactions carry an optional :side.
+  const REACTIONS = ['happy','blush','giggle','bellyRub','fluster','dizzy','boop','wave:right','wave:left'];
+  // [vrmBoneName, friendly label]. The lower-arm/lower-leg bones ARE the elbow
+  // and knee — bending them is flexion. Labels make that obvious; the real bone
+  // name is what goes into the readout / pose.add lines.
+  const BONES = [
+    ['head','Head'], ['neck','Neck'], ['upperChest','Upper chest'],
+    ['chest','Chest'], ['spine','Spine'], ['hips','Hips'],
+    ['leftShoulder','L shoulder (clavicle)'], ['rightShoulder','R shoulder (clavicle)'],
+    ['leftUpperArm','L upper arm (shoulder joint)'], ['rightUpperArm','R upper arm (shoulder joint)'],
+    ['leftLowerArm','L forearm — ELBOW flex'], ['rightLowerArm','R forearm — ELBOW flex'],
+    ['leftHand','L hand / wrist'], ['rightHand','R hand / wrist'],
+    ['leftUpperLeg','L thigh (hip joint)'], ['rightUpperLeg','R thigh (hip joint)'],
+    ['leftLowerLeg','L shin — KNEE flex'], ['rightLowerLeg','R shin — KNEE flex'],
+    ['leftFoot','L foot / ankle'], ['rightFoot','R foot / ankle'],
+  ];
+  const AXES = ['x','y','z'];
+  const RANGE = 1.6;   // slider extent per axis (radians)
+
+  const inp = (id,extra='') =>
+    `<input id="${id}" ${extra} style="width:100%">`;
+  const btn = (id,txt,flex='') =>
+    `<button id="${id}" style="${flex}padding:6px 9px;border-radius:6px;border:1px solid #2b3a55;`+
+    `background:#1c2740;color:#e8eefc;cursor:pointer">${txt}</button>`;
+
+  const panel = document.createElement('div');
+  panel.id = 'anim-tuner';
+  panel.style.cssText =
+    'position:fixed;right:8px;top:8px;width:262px;max-height:92vh;overflow:auto;'+
+    'z-index:9999;background:rgba(12,16,24,.94);color:#e8eefc;border:1px solid #2b3a55;'+
+    'border-radius:10px;padding:10px 12px;font:12px/1.35 system-ui,sans-serif;'+
+    'box-shadow:0 6px 24px rgba(0,0,0,.5);display:none;';
+
+  const optList = (arr,tag) => arr.map(n=>`<option value="${tag}:${n}">${n} (${tag[0]})</option>`).join('');
+  let html =
+    // The native dropdown popup renders on a white background, so the panel's
+    // light text is unreadable there — colour the select/option explicitly.
+    '<style>'+
+      '#anim-tuner select{background:#1c2740;color:#e8eefc;border:1px solid #2b3a55;'+
+        'border-radius:6px;padding:5px}'+
+      '#anim-tuner option{background:#12192a;color:#e8eefc}'+
+      '#anim-tuner optgroup{background:#0b1018;color:#8fb0e0;font-style:normal}'+
+    '</style>'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
+      '<b>Animation Tuner</b>'+
+      '<button id="tn-close" style="background:none;border:0;color:#9fb3d9;font-size:16px;cursor:pointer">✕</button>'+
+    '</div>'+
+    '<label style="display:block;margin-bottom:2px;color:#9fb3d9">Animation</label>'+
+    `<select id="tn-anim" style="width:100%;margin-bottom:8px">`+
+      `<optgroup label="Gestures">${optList(GESTURE_LIST,'gesture')}</optgroup>`+
+      `<optgroup label="Reactions">${optList(REACTIONS,'reaction')}</optgroup>`+
+    `</select>`+
+    '<label style="display:block;margin-bottom:2px;color:#9fb3d9">Bone / joint</label>'+
+    `<select id="tn-bone" style="width:100%;margin-bottom:8px">`+
+      BONES.map(([b,lbl])=>`<option value="${b}">${lbl}</option>`).join('')+
+    `</select>`;
+  for (const ax of AXES){
+    html +=
+      `<label style="display:block;margin:6px 0 2px">${ax.toUpperCase()} `+
+      `<span id="tn-v-${ax}" style="float:right;color:#8fd0ff;font-variant-numeric:tabular-nums"></span></label>`+
+      inp(`tn-s-${ax}`, `type="range" min="${-RANGE}" max="${RANGE}" step="0.01"`);
+  }
+  html +=
+    '<div style="display:flex;gap:6px;margin-top:10px">'+
+      btn('tn-copy','Copy deltas','flex:1;')+ btn('tn-zero','Zero bone')+ btn('tn-reset','Reset all')+
+    '</div>'+
+    '<textarea id="tn-out" readonly style="width:100%;height:120px;margin-top:8px;box-sizing:border-box;'+
+    'background:#0b1018;color:#bfe0ff;border:1px solid #2b3a55;border-radius:6px;font:11px/1.3 monospace;padding:6px"></textarea>';
+  panel.innerHTML = html;
+  document.body.appendChild(panel);
+
+  const el = id => document.getElementById(id);
+  const cur = () => el('tn-bone').value;
+  const ov  = b => (tuner.overrides[b] ||= [0,0,0]);
+
+  function readout(){
+    const anim = el('tn-anim').value.split(':').slice(1).join(':');
+    const lines = [];
+    for (const [b] of BONES){
+      const o = tuner.overrides[b];
+      if (o && (o[0]||o[1]||o[2]))
+        lines.push(`pose.add('${b}', ${o[0].toFixed(2)}, ${o[1].toFixed(2)}, ${o[2].toFixed(2)});`);
+    }
+    el('tn-out').value = `// ${anim} — additive deltas\n` + (lines.join('\n') || '// (no offsets yet)');
+  }
+  function syncSliders(){
+    const o = ov(cur());
+    AXES.forEach((ax,i)=>{
+      el('tn-s-'+ax).value = o[i];
+      el('tn-v-'+ax).textContent = (o[i]>=0?' ':'') + o[i].toFixed(2);
+    });
+  }
+  function refresh(){ syncSliders(); readout(); }
+
+  AXES.forEach((ax,i)=>{
+    el('tn-s-'+ax).addEventListener('input', ev=>{
+      ov(cur())[i] = parseFloat(ev.target.value);
+      el('tn-v-'+ax).textContent = (ov(cur())[i]>=0?' ':'') + ov(cur())[i].toFixed(2);
+      readout();
+    });
+  });
+  el('tn-bone').addEventListener('change', syncSliders);
+  el('tn-anim').addEventListener('change', ()=>{
+    const [kind, ...rest] = el('tn-anim').value.split(':');
+    tunerHold(kind, rest.join(':'));
+  });
+  el('tn-zero').addEventListener('click', ()=>{ tuner.overrides[cur()] = [0,0,0]; refresh(); });
+  el('tn-reset').addEventListener('click', ()=>{ tuner.overrides = {}; refresh(); });
+  el('tn-copy').addEventListener('click', ()=>{
+    const out = el('tn-out'); out.select();
+    try { navigator.clipboard.writeText(out.value); } catch(e){}
+    try { document.execCommand('copy'); } catch(e){}
+    toast('Deltas copied', 1400);
+  });
+
+  let open = false;
+  function setOpen(v){
+    open = v;
+    panel.style.display = v ? 'block' : 'none';
+    if (v){
+      const [kind, ...rest] = el('tn-anim').value.split(':');
+      tunerHold(kind, rest.join(':'));
+      refresh();
+    } else {
+      tunerRelease();
+    }
+  }
+  el('tn-close').addEventListener('click', ()=>setOpen(false));
+
+  const chip = document.createElement('button');
+  chip.className = 'chip react';
+  chip.textContent = '⚙ Tuner';
+  chip.addEventListener('click', ()=>setOpen(!open));
+  box.appendChild(chip);
 })();
 
 // Motion sensors toggle
