@@ -37,20 +37,30 @@ const idle = {
     // joints working together or the pose breaks — the thigh swings forward
     // (hip flexion), the shin swings back (knee flexion), and the ankle
     // counter-rotates so the foot stays flat on the ground.
-    const bph  = Math.sin(this.t*CONFIG.BOUNCE_RATE)*0.5 + 0.5;    // 0..1
-    const knee = CONFIG.KNEE_BEND + bph*CONFIG.BOUNCE_AMOUNT;
+    // Each leg bounces on its own phase (not a shared one) and a slow weight
+    // lean tips a little extra bend onto whichever leg is "bearing weight",
+    // so the knees don't pump in lockstep like a marching toy — a standing
+    // body shifts its weight from leg to leg instead.
+    const bphL = Math.sin(this.t*CONFIG.BOUNCE_RATE)*0.5 + 0.5;              // 0..1
+    const bphR = Math.sin(this.t*CONFIG.BOUNCE_RATE*0.93 + 1.8)*0.5 + 0.5;   // 0..1, offset rate+phase
+    const weightShift = Math.sin(this.t*0.17)*0.03;    // slow lean between legs
+    const kneeL = (CONFIG.KNEE_BEND + bphL*CONFIG.BOUNCE_AMOUNT) + Math.max(0,  weightShift);
+    const kneeR = (CONFIG.KNEE_BEND + bphR*CONFIG.BOUNCE_AMOUNT) * 0.88 + Math.max(0, -weightShift);
+    const knees = [kneeL, kneeR];
     const legs = [['leftUpperLeg','leftLowerLeg','leftFoot'], ['rightUpperLeg','rightLowerLeg','rightFoot']];
     // legs run slightly out of phase with each other so the stance shifts
     // subtly instead of both knees pumping in perfect unison
     const legPhase = [Math.sin(this.t*0.41)*0.06, Math.sin(this.t*0.41 + 2.2)*0.06];
+    // a faint independent hip sway so the thighs aren't perfectly parallel rails
+    const legSway = [Math.sin(this.t*0.23)*0.02, Math.sin(this.t*0.23 + 2.6)*0.02];
     legs.forEach((set, i)=>{
-      const k = Math.max(0, knee*(i===0 ? 1.0 : 0.88) + legPhase[i]);
-      pose.add(set[0], -k*0.45, 0, 0);   // thigh forward
-      pose.add(set[1],  k,      0, 0);   // shin back (knee flexes)
-      pose.add(set[2], -k*0.55, 0, 0);   // ankle keeps the foot flat
+      const k = Math.max(0, knees[i] + legPhase[i]);
+      pose.add(set[0], -k*0.45, 0, legSway[i]);   // thigh forward + slight sway
+      pose.add(set[1],  k,      0, 0);            // shin back (knee flexes)
+      pose.add(set[2], -k*0.55, 0, 0);             // ankle keeps the foot flat
     });
     // sink the hips as the knees flex so the body bobs instead of the feet sliding
-    S.hipsDrop = -knee * rig.legLength * CONFIG.HIP_DROP * 0.5;
+    S.hipsDrop = -((knees[0]+knees[1])*0.5) * rig.legLength * CONFIG.HIP_DROP * 0.5;
 
     // subtle weight-shift so the body isn't statue-still
     pose.add('hips', 0, Math.sin(this.t*0.5)*0.02, Math.sin(this.t*0.4)*0.025);
