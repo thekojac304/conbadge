@@ -1,6 +1,6 @@
 // Con Badge — tuning constants and the touch-zone map.
 export const CONFIG = {
-  BUILD: 'b40',            // bump on each new version — shown in the load readout
+  BUILD: 'b41',            // bump on each new version — shown in the load readout
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
   ORBIT_AZIMUTH: 0.62,     // rad: how far left/right you can orbit (clamped both ways)
   ORBIT_POLAR_LO: 1.12,    // rad from +Y: how far you can look down over the top
@@ -13,7 +13,7 @@ export const CONFIG = {
   ELBOW_BEND: 0.40,        // resting elbow bend (flip sign if elbows bend backwards)
   KNEE_BEND: 0.30,         // resting knee flex (radians) — 0 is locked/stiff
   BOUNCE_RATE: 1.05,       // bounce speed; kept near the breathing rate so they harmonise
-  BOUNCE_AMOUNT: 0.17,     // extra knee flex at the bottom of each bounce
+  BOUNCE_AMOUNT: 0.28,     // extra knee flex at the bottom of each bounce
   HIP_DROP: 0.55,          // how much the hips sink with the knees (0 = no sink)
   EYE_GAIN: 0.45,          // how far the eye bones rotate when looking around (0 = off)
   WAVE_RAISE: 0.32,        // upper-arm angle ABOVE HORIZONTAL during a wave (absolute now)

@@ -43,14 +43,14 @@ const idle = {
     // body shifts its weight from leg to leg instead.
     const bphL = Math.sin(this.t*CONFIG.BOUNCE_RATE)*0.5 + 0.5;              // 0..1
     const bphR = Math.sin(this.t*CONFIG.BOUNCE_RATE*0.93 + 1.8)*0.5 + 0.5;   // 0..1, offset rate+phase
-    const weightShift = Math.sin(this.t*0.17)*0.03;    // slow lean between legs
+    const weightShift = Math.sin(this.t*0.17)*0.08;    // slow lean between legs
     const kneeL = (CONFIG.KNEE_BEND + bphL*CONFIG.BOUNCE_AMOUNT) + Math.max(0,  weightShift);
     const kneeR = (CONFIG.KNEE_BEND + bphR*CONFIG.BOUNCE_AMOUNT) * 0.88 + Math.max(0, -weightShift);
     const knees = [kneeL, kneeR];
     const legs = [['leftUpperLeg','leftLowerLeg','leftFoot'], ['rightUpperLeg','rightLowerLeg','rightFoot']];
     // legs run slightly out of phase with each other so the stance shifts
     // subtly instead of both knees pumping in perfect unison
-    const legPhase = [Math.sin(this.t*0.41)*0.06, Math.sin(this.t*0.41 + 2.2)*0.06];
+    const legPhase = [Math.sin(this.t*0.41)*0.09, Math.sin(this.t*0.41 + 2.2)*0.09];
     // a faint independent hip sway so the thighs aren't perfectly parallel rails
     const legSway = [Math.sin(this.t*0.23)*0.02, Math.sin(this.t*0.23 + 2.6)*0.02];
     legs.forEach((set, i)=>{
@@ -209,20 +209,20 @@ const GESTURES = {
     pose.add('neck',  -0.08*body, 0, 0);
     pose.add('head',  -0.13*body, sway*0.05*body, 0);
     gestureHips = Math.max(gestureHips, 0.03*rig.legLength*body);
-    pose.add('leftLowerLeg',  -0.10*body, 0, 0);
-    pose.add('rightLowerLeg', -0.10*body, 0, 0);
+    pose.add('leftLowerLeg',  -0.14*body, 0, 0);
+    pose.add('rightLowerLeg', -0.14*body, 0, 0);
     setExpr('smileEyes', 0.35*body);
   },
   footShuffle(t,d){ const e=envelope(t,d,0.15); const s=Math.sin(t*3.0);  // ein default 0.2->0.15: 0.68s->0.51s
     const up = Math.max(0,s), dn = Math.max(0,-s);
     pose.add('hips', 0, s*0.05*e, s*0.06*e);            // weight shifts side to side
     // each step lifts the thigh, folds the knee, and lands the foot flat
-    pose.add('rightUpperLeg', -up*0.30*e, 0, 0);
-    pose.add('rightLowerLeg',  up*0.52*e, 0, 0);
-    pose.add('rightFoot',     -up*0.22*e, 0, 0);
-    pose.add('leftUpperLeg',  -dn*0.30*e, 0, 0);
-    pose.add('leftLowerLeg',   dn*0.52*e, 0, 0);
-    pose.add('leftFoot',      -dn*0.22*e, 0, 0);
+    pose.add('rightUpperLeg', -up*0.36*e, 0, 0);
+    pose.add('rightLowerLeg',  up*0.68*e, 0, 0);
+    pose.add('rightFoot',     -up*0.28*e, 0, 0);
+    pose.add('leftUpperLeg',  -dn*0.36*e, 0, 0);
+    pose.add('leftLowerLeg',   dn*0.68*e, 0, 0);
+    pose.add('leftFoot',      -dn*0.28*e, 0, 0);
     pose.add('spine', 0, s*0.03*e, 0);
   },
   lookAround(t,d){ const e=envelope(t,d,0.15,0.3); const s=Math.sin(t*1.4);  // ein 0.3->0.15: 1.08s->0.54s
@@ -273,7 +273,7 @@ const GESTURES = {
     pose.add('chest', 0, 0,      -0.05*e);
     pose.add('head',  0, 0,       0.05*e);
     pose.add('leftUpperLeg',  0.05*e, 0, 0);
-    pose.add('rightLowerLeg', 0.10*e, 0, 0);
+    pose.add('rightLowerLeg', 0.14*e, 0, 0);
   },
 
   // Dip the muzzle and take a couple of quick sniffs.
@@ -293,18 +293,18 @@ const GESTURES = {
   // ---- leg gestures -------------------------------------------------------
   // Lift a hind paw, fold the knee, glance down at it, put it back.
   pawLift(t,d){ const e=envelope(t,d,0.16,0.32);     // ein 0.28->0.16: 0.78s->0.45s
-    pose.add('rightUpperLeg', -0.42*e, 0, 0);   // thigh forward
-    pose.add('rightLowerLeg',  0.80*e, 0, 0);   // knee folds up
-    pose.add('rightFoot',     -0.28*e, 0, 0);
+    pose.add('rightUpperLeg', -0.48*e, 0, 0);   // thigh forward
+    pose.add('rightLowerLeg',  0.98*e, 0, 0);   // knee folds up
+    pose.add('rightFoot',     -0.34*e, 0, 0);
     pose.add('hips',  0, 0, -0.06*e);           // weight onto the other leg
-    pose.add('leftLowerLeg', 0.08*e, 0, 0);
+    pose.add('leftLowerLeg', 0.10*e, 0, 0);
     pose.add('head', 0.06*e, -0.10*e, 0.07*e);  // peeks at it
   },
 
   // Idle toe tapping — one foot, quick repeated taps.
   toeTap(t,d){ const e=envelope(t,d,0.15,0.25); const s=Math.max(0, Math.sin(t*9));  // ein 0.2->0.15: 0.6s->0.45s
     pose.add('rightFoot',     -0.40*s*e, 0, 0);
-    pose.add('rightLowerLeg',  0.14*s*e, 0, 0);
+    pose.add('rightLowerLeg',  0.22*s*e, 0, 0);
     pose.add('hips', 0, 0, -0.03*e);
   },
 
@@ -314,16 +314,16 @@ const GESTURES = {
     gestureHips = Math.max(gestureHips, 0.055*rig.legLength*e);
     pose.add('leftFoot',  -0.55*e, 0, 0);
     pose.add('rightFoot', -0.55*e, 0, 0);
-    pose.add('leftLowerLeg',  -0.14*e, 0, 0);
-    pose.add('rightLowerLeg', -0.14*e, 0, 0);
+    pose.add('leftLowerLeg',  -0.20*e, 0, 0);
+    pose.add('rightLowerLeg', -0.20*e, 0, 0);
     pose.add('spine', -0.05*e); pose.add('head', -0.07*e);
   },
 
   // Stretch one leg out and roll the ankle.
   legStretch(t,d){ const e=envelope(t,d,0.16,0.4); const r=Math.sin(t*3.5);  // ein 0.35->0.16: 1.26s->0.58s
-    pose.add('leftUpperLeg', -0.38*e, 0, 0);
-    pose.add('leftLowerLeg',  0.12*e, 0, 0);
-    pose.add('leftFoot',      0.28*e, r*0.18*e, 0);   // ankle circles
+    pose.add('leftUpperLeg', -0.42*e, 0, 0);
+    pose.add('leftLowerLeg',  0.18*e, 0, 0);
+    pose.add('leftFoot',      0.32*e, r*0.18*e, 0);   // ankle circles
     pose.add('hips',  0, 0, 0.06*e);
     pose.add('spine', 0, 0,-0.04*e);
   },
@@ -696,8 +696,8 @@ const reactions = {
       pose.add('leftLowerArm',  0, -0.30*e, 0);
       pose.add('rightLowerArm', 0,  0.30*e, 0);
       // unsteady legs
-      pose.add('leftLowerLeg',  (0.16 + w*0.09)*e, 0, 0);
-      pose.add('rightLowerLeg', (0.16 - w*0.09)*e, 0, 0);
+      pose.add('leftLowerLeg',  (0.22 + w*0.12)*e, 0, 0);
+      pose.add('rightLowerLeg', (0.22 - w*0.12)*e, 0, 0);
       gestureHips = Math.min(gestureHips, -0.02*rig.legLength*e);
       gestureTail = Math.max(gestureTail, 0.9*e);
       earImpulse  = Math.max(earImpulse, 0.45*e);
