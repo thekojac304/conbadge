@@ -1,6 +1,6 @@
 // Con Badge — tuning constants and the touch-zone map.
 export const CONFIG = {
-  BUILD: 'b74',            // bump on each new version — shown in the load readout
+  BUILD: 'b75',            // bump on each new version — shown in the load readout
   LIGHTING: true,          // master switch for the light.js Look system (false = flat baseline)
   LIGHTING_DEFAULT: 'studio', // Look used when the user hasn't picked one (see LOOKS in light.js)
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
