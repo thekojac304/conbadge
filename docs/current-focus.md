@@ -4,6 +4,19 @@ _Keep this short. Update it whenever the active thread of work changes —
 this is the first thing to read at the start of a new session._
 
 Active area:
+- **Idle arm/elbow liveliness** (build `b79`, working tree, not yet confirmed
+  on-device). User reported the idle arms read as stiff — the elbows had a flex
+  sine but it was slow/small enough (~±0.13 at a ~15s period) to look static.
+  Coupled the elbow open/close to the **breathing** phase so they visibly work
+  each breath, scaled by a new `CONFIG.ELBOW_FLEX` (0.22, tunable by feel). Left
+  `ELBOW_BEND` (the resting angle) untouched on purpose — it's the shared base
+  the gestures and the tuned fluster cover pose layer on, so changing it would
+  perturb them. Motion-only fix in `anim.js` idle + `config.js`. **Still open:**
+  the user also wants the *default* arm/hand resting position adjusted, but gave
+  no target — idle isn't currently a selectable animation in the Tuner, so
+  either they describe the target or we wire idle into the Tuner for live
+  dialing (pending their choice).
+
 - **Customizable nameplate** (build `b78`, working tree, not yet confirmed
   on-device). Expanded the bare name/pronouns plate into a fully styleable
   badge. New **Nameplate style** card in the Badge tab: Position (top/middle/

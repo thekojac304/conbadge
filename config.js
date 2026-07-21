@@ -1,6 +1,6 @@
 // Con Badge — tuning constants and the touch-zone map.
 export const CONFIG = {
-  BUILD: 'b78',            // bump on each new version — shown in the load readout
+  BUILD: 'b79',            // bump on each new version — shown in the load readout
   LIGHTING: true,          // master switch for the light.js Look system (false = flat baseline)
   LIGHTING_DEFAULT: 'studio', // Look used when the user hasn't picked one (see LOOKS in light.js)
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
@@ -13,6 +13,7 @@ export const CONFIG = {
   ARM_FORWARD: 0.30,       // swing arms forward so the hands clear the thighs
   ARM_OUT: 0.22,           // outward splay from the body (raise if hands clip the hips)
   ELBOW_BEND: 0.40,        // resting elbow bend (flip sign if elbows bend backwards)
+  ELBOW_FLEX: 0.22,        // how far the idle elbows open/close with each breath (0 = static/stiff)
   KNEE_BEND: 0.30,         // resting knee flex (radians) — 0 is locked/stiff
   BOUNCE_RATE: 1.05,       // bounce speed; kept near the breathing rate so they harmonise
   BOUNCE_AMOUNT: 0.28,     // extra knee flex at the bottom of each bounce

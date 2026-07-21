@@ -17,8 +17,13 @@ const idle = {
     const A = CONFIG.ARM_DOWN, F = CONFIG.ARM_FORWARD, O = CONFIG.ARM_OUT, E = CONFIG.ELBOW_BEND;
     const swayL = Math.sin(this.t*0.53)*0.05, swayR = Math.sin(this.t*0.61 + 1.3)*0.05;
     const swingL = Math.sin(this.t*0.31 + 0.4)*0.045, swingR = Math.sin(this.t*0.27 + 2.1)*0.045;
-    const flexL = Math.sin(this.t*0.43 + 1.9)*0.13, flexR = Math.sin(this.t*0.37 + 0.6)*0.13;
-    const br = Math.sin(this.t*1.9)*0.5+0.5;      // shared breathing phase
+    const br = Math.sin(this.t*1.9)*0.5+0.5;      // shared breathing phase (0..1)
+    // Elbows: a slow independent drift PLUS a breathing-coupled open/close, so
+    // they visibly work with each breath instead of holding a near-fixed bend
+    // (which read as stiff). ELBOW_FLEX scales the per-breath motion; the sides
+    // use slightly different gains so the two elbows never mirror exactly.
+    const flexL = Math.sin(this.t*0.43 + 1.9)*0.10 + (br-0.5)*CONFIG.ELBOW_FLEX;
+    const flexR = Math.sin(this.t*0.37 + 0.6)*0.10 + (br-0.5)*CONFIG.ELBOW_FLEX*0.82;
 
     // When a reaction poses the arms to a fixed target (the fluster cover), the
     // idle sine WOBBLE on the arms keeps modulating them on top — the per-breath
