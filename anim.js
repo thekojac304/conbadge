@@ -5,11 +5,14 @@ import { pose, setExpr, envelope, armBase, armReach, scratchTarget, anchorWorld 
 
 const idle = {
   t:0, blinkIn:rand(2,5), blinkT:-1, gaze:{x:0,y:0}, gazeTarget:{x:0,y:0}, gazeIn:rand(1.2,3),
-  faceT:-1, faceIn:rand(3,8), faceKind:null, armSteady:0,
+  faceT:-1, faceIn:rand(3,8), faceKind:null, armSteady:0, _hold:false,
   reset(){ this.t=0; this.blinkIn=rand(2,5); this.blinkT=-1; this.gaze={x:0,y:0}; this.gazeTarget={x:0,y:0}; this.gazeIn=rand(1.2,3);
-           this.faceT=-1; this.faceIn=rand(3,8); this.faceKind=null; this.armSteady=0; },
+           this.faceT=-1; this.faceIn=rand(3,8); this.faceKind=null; this.armSteady=0; this._hold=false; },
   update(dt){
-    this.t += dt;
+    // Tuner can freeze the base pose (idle target) for live tuning: pausing t
+    // holds every pose sine (arms/breathing/knees/tail) static; blink+gaze
+    // still tick off dt below so the face doesn't lock up.
+    if (!this._hold) this.t += dt;
 
     // Relaxed resting pose. The trick to not looking stiff is layering several
     // slow sines at DIFFERENT frequencies so nothing loops visibly and the two
@@ -31,7 +34,10 @@ const idle = {
     // tuned to hover just off the body clips on some frames and floats on others.
     // Damp only the wobble (not the static resting pose the reaction is authored
     // against) while such a reaction is active, eased so it doesn't pop.
-    const wantSteady = (tuner.active || (reactions.active && reactions.kind==='fluster')) ? 1 : 0;
+    // Damp the arm wobble for a fixed-target hold (fluster cover, or the Tuner
+    // holding a gesture/reaction) — but NOT when tuning idle itself, where the
+    // freeze already stills it and we want the true resting wobble on show.
+    const wantSteady = ((tuner.active && tuner.kind!=='idle') || (reactions.active && reactions.kind==='fluster')) ? 1 : 0;
     this.armSteady += (wantSteady - this.armSteady) * (1 - Math.pow(0.02, dt));
     const wob = 1 - this.armSteady*0.85;          // → ~0.15 while steadying
 
@@ -855,8 +861,11 @@ function tunerHold(kind, name){
   // stop whatever's playing, then hold the requested animation frozen at peak
   gestures.cur = null; gestures._hold = false; gestures.gainTarget = 1;
   reactions._hold = false; reactions.clear();
+  idle._hold = false;
   tuner.active = true; tuner.kind = kind; tuner.name = name;
-  if (kind === 'reaction'){
+  if (kind === 'idle'){
+    idle._hold = true;                   // freeze the always-on base pose
+  } else if (kind === 'reaction'){
     const [k, side] = name.split(':');
     reactions.fire(k, side);
     reactions.t = reactions.dur * 0.5;   // past the ease-in, sitting at full pose
@@ -872,6 +881,7 @@ function tunerRelease(){
   tuner.active = false; tuner.name = null;
   gestures._hold = false; gestures.cur = null; gestures.gainTarget = 1; gestures.next = rand(4,9);
   reactions._hold = false; reactions.clear();
+  idle._hold = false;
 }
 function applyTuner(){
   if (!tuner.active) return;

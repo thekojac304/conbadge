@@ -386,6 +386,7 @@ const BG_PRESETS = [
     '</div>'+
     '<label style="display:block;margin-bottom:2px;color:#9fb3d9">Animation</label>'+
     `<select id="tn-anim" style="margin-bottom:8px">`+
+      `<optgroup label="Base"><option value="idle:idle">idle — resting pose</option></optgroup>`+
       `<optgroup label="Gestures">${optList(GESTURE_LIST,'gesture')}</optgroup>`+
       `<optgroup label="Reactions">${optList(REACTIONS,'reaction')}</optgroup>`+
     `</select>`+
@@ -487,7 +488,9 @@ const BG_PRESETS = [
         : `pose.twist('${b}', ${o[3].toFixed(2)});`);
     }
     for (const s in tuner.face){ if (tuner.face[s]) lines.push(`setExpr('${s}', ${tuner.face[s].toFixed(2)});`); }
-    el('tn-out').value = `// ${anim} — additive deltas\n` + (lines.join('\n') || '// (no offsets yet)');
+    // idle has no envelope, so its deltas bake raw (not value*e like gestures).
+    const hint = anim === 'idle' ? ' (base pose — bake raw, no *e)' : '';
+    el('tn-out').value = `// ${anim} — additive deltas${hint}\n` + (lines.join('\n') || '// (no offsets yet)');
   }
   function syncSliders(){
     const o = cur() ? ov(cur()) : [0,0,0,0];

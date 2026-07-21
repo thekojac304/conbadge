@@ -13,9 +13,11 @@ Active area:
   the gestures and the tuned fluster cover pose layer on, so changing it would
   perturb them. Motion-only fix in `anim.js` idle + `config.js`. **Still open:**
   the user also wants the *default* arm/hand resting position adjusted, but gave
-  no target — idle isn't currently a selectable animation in the Tuner, so
-  either they describe the target or we wire idle into the Tuner for live
-  dialing (pending their choice).
+  no target. **Resolved:** wired idle into the Animation Tuner (`b80`) — new
+  **Base → idle** picker target freezes the resting pose (`idle._hold`) so it
+  can be dialed live like any gesture. User will tune the resting arm/hand
+  position by eye and hand back deltas (bake **raw**, no `*e`, since idle has no
+  envelope). Awaiting on-device tuning + the elbow-motion feel check.
 
 - **Customizable nameplate** (build `b78`, working tree, not yet confirmed
   on-device). Expanded the bare name/pronouns plate into a fully styleable

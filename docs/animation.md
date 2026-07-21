@@ -83,6 +83,14 @@ lines ready to paste into the gesture/reaction source. Ear/tail overrides use
 synthetic keys (`ear0`, `tail0`, …) applied via `tunerAddTo()` since they
 aren't humanoid bones.
 
+The picker also has a **Base → idle** target so the always-on resting pose can
+be tuned. Selecting it sets `idle._hold` (freezes `idle.t`, so every pose sine
+— arms/breathing/knees/tail — sits static while blink/gaze keep ticking off
+`dt`); arm-wobble damping is deliberately skipped for `kind==='idle'` so the
+*true* resting pose is on show. **Idle has no envelope, so its deltas bake raw**
+(adjust the idle base offsets / `CONFIG` constants), not `value*e` like the
+gestures/reactions — the readout header flags this.
+
 ## Design philosophy
 
 Animations stay **procedural (code)** by deliberate, standing decision — not
