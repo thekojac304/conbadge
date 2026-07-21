@@ -64,23 +64,33 @@ renderer itself (`core.js`). Lighting/shading is a separate system — see
 ### Backdrop (CSS, behind the transparent canvas)
 
 The "background" is a pure-CSS layer, not part of the WebGL scene — `#stage`
-holds the gradient plus `#bg-orbs`, three soft blurred radial glows
-(`mix-blend-mode:screen`) that give the backdrop depth and life:
+holds the gradient plus `#backdrop`, which shows **one selectable decorative
+style** chosen by its `data-style` attribute (`applyBgStyle()` in `ui.js`):
 
-- **Ambient drift** — each orb runs its own slow CSS keyframe
-  (`drift1/2/3`, 27–35s), so the backdrop is never static even with parallax
-  off. Only `transform`/`opacity` animate, so the expensive `blur()` rasters
-  once (compositor-only motion — safe on mobile GPUs). Disabled under
-  `prefers-reduced-motion`.
+- **orbs** — three soft blurred radial glows (`mix-blend-mode:screen`), each
+  drifting on its own slow keyframe (`drift1/2/3`, 27–35s).
+- **stars** — a starfield of three depth layers. The dots are one box-shadow
+  list per layer, generated once in `ui.js:buildStarfield()` (static raster).
+  Nearer layers slide at a larger parallax fraction and twinkle (`tw2/tw3`
+  opacity keyframes); the far layer is steady.
+- **aurora** — three stretched, blurred bands sweeping horizontally (`aur1/2/3`).
+- **plain** — no decorative layer; just the gradient.
+
+Cross-cutting behaviour shared by every style:
+
 - **Tilt-parallax slide** — `updateParallax()` writes `--px`/`--py` on `:root`
-  each frame from the same `parallax.yaw`/`pitch`, mapped to px by
+  each frame from `parallax.yaw`/`pitch`, mapped to px by
   `CONFIG.BG_PARALLAX_PX` and moving *opposite* the camera swing so the far
-  layer separates from the avatar (the actual depth cue). Writes are skipped
-  once the offset settles to ~0, so an idle badge does no per-frame DOM work.
+  layer separates from the avatar (the actual depth cue). Star layers scale
+  this by per-depth factors. Writes are skipped once the offset settles to ~0,
+  so an idle badge does no per-frame DOM work.
+- **Cheap by construction** — only `transform`/`opacity` animate, so blurs and
+  the box-shadow starfield raster once (compositor-only motion — safe on mobile
+  GPUs). All motion is disabled under `prefers-reduced-motion`.
 - **Colour** is driven entirely through CSS custom properties on `:root`
-  (`--bg-a/-b`, `--orb-a/-b/-c`), written by `applyBackground()` in `ui.js`.
-  See [ui.md](ui.md) and [lighting.md](lighting.md) for the "Match lighting"
-  source-of-truth split.
+  (`--bg-a/-b`, `--orb-a/-b/-c`), written by `applyBackground()` in `ui.js`, and
+  is independent of the style choice. See [ui.md](ui.md) and
+  [lighting.md](lighting.md) for the "Match lighting" source-of-truth split.
 
 ### Renderer
 

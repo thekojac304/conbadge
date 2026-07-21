@@ -24,13 +24,17 @@ tilt-parallax toggles, keep-awake toggle, particle toggle, tail curl/lift
 sliders, camera height slider, camera lock, save-default-view, auto-return
 timeout, blendshape browser.
 
-### Backdrop colour (`applyBackground()`)
+### Backdrop style + colour (`applyBgStyle()` / `applyBackground()`)
 
-The gradient + orb glows (see [rendering.md](rendering.md) for the CSS layer)
-are all driven through CSS custom properties on `:root`, so the manual
-pickers, the 6 presets, and the Look-matched palette all write the *same*
-knobs (`--bg-a/-b`, `--orb-a/-b/-c`). `applyBackground()` is the single writer
-and picks the source:
+The Background card has a **Style** selector (`settings.bgStyle`: orbs /
+starfield / aurora / plain) that swaps which decorative layer `#backdrop`
+shows — see [rendering.md](rendering.md) for the CSS layers. Style and colour
+are **independent**: any style renders in any palette.
+
+Colour (gradient + orb/star/aurora tints) is driven through CSS custom
+properties on `:root`, so the manual pickers, the 6 presets, and the
+Look-matched palette all write the *same* knobs (`--bg-a/-b`, `--orb-a/-b/-c`).
+`applyBackground()` is the single writer and picks the source:
 
 - **Match lighting on** (`settings.bgAuto`, default) — colours come from the
   active Look's `bg` block (`lookBackground()` in `light.js`); switching Look

@@ -21,6 +21,7 @@ const els = {
   bgA:document.getElementById('bg-a'),
   bgB:document.getElementById('bg-b'),
   tgBgAuto:document.getElementById('tg-bgauto'),
+  selBgStyle:document.getElementById('sel-bgstyle'),
   tgLight:document.getElementById('tg-light'),
   selLook:document.getElementById('sel-look'),
   lightInt:document.getElementById('light-int'),
@@ -36,11 +37,13 @@ function applySettings(){
   els.ppro.textContent  = settings.pronouns || '';
   els.plate.classList.toggle('hidden', !settings.showPlate || (!settings.name && !settings.pronouns));
   applyBackground();
+  applyBgStyle();
   // reflect into controls
   els.inName.value=settings.name; els.inPro.value=settings.pronouns;
   els.tgPlate.checked=settings.showPlate; els.tgSaver.checked=settings.saver;
   els.bgA.value=settings.bgA; els.bgB.value=settings.bgB;
   els.tgBgAuto.checked = settings.bgAuto !== false;
+  els.selBgStyle.value = settings.bgStyle || 'orbs';
   reflectLighting();
   resize();
 }
@@ -67,6 +70,33 @@ function applyBackground(){
   els.bgA.disabled = els.bgB.disabled = auto;
   const presets = document.getElementById('bg-presets');
   if (presets) presets.style.opacity = auto ? '.4' : '';
+}
+
+/* ---- Backdrop style (orbs / stars / aurora / plain) -----------------------
+   Picks which decorative layer #backdrop shows. Colours still come from
+   applyBackground(); this only swaps the shape. The starfield's dots are one
+   box-shadow list per depth layer, generated once on first use (cheap, static
+   — only opacity/transform animate). */
+const bdEl = document.getElementById('backdrop');
+let _starsBuilt = false;
+function buildStarfield(){
+  if (!bdEl) return;
+  const layers = bdEl.querySelectorAll('.star-layer');
+  if (!layers.length) return;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  // Spread dots across −20%..120% of the viewport so parallax/drift never
+  // reveals a bare edge; #stage clips the overflow.
+  const dot = cols => `${((Math.random()*1.4-0.2)*vw)|0}px ${((Math.random()*1.4-0.2)*vh)|0}px ${cols[(Math.random()*cols.length)|0]}`;
+  const field = (n,cols) => { const a=[]; for (let i=0;i<n;i++) a.push(dot(cols)); return a.join(','); };
+  layers[0].style.setProperty('--stars', field(70, ['#fff','#cfe0ff']));            // far
+  layers[1].style.setProperty('--stars', field(45, ['#fff','#cfe0ff','#fff3e0']));  // mid
+  layers[2].style.setProperty('--stars', field(24, ['#fff','#fff3e0']));            // near
+  _starsBuilt = true;
+}
+function applyBgStyle(){
+  const style = settings.bgStyle || 'orbs';
+  if (style === 'stars' && !_starsBuilt) buildStarfield();
+  if (bdEl) bdEl.dataset.style = style;
 }
 
 /* ---- Lighting Look, Brightness, Rim -------------------------------------- */
@@ -116,6 +146,7 @@ els.tgSaver.addEventListener('change', e=>{ settings.saver=e.target.checked; S.a
 els.bgA.addEventListener('input', e=>{ settings.bgA=e.target.value; applyBackground(); saveSettings(); });
 els.bgB.addEventListener('input', e=>{ settings.bgB=e.target.value; applyBackground(); saveSettings(); });
 els.tgBgAuto.addEventListener('change', e=>{ settings.bgAuto=e.target.checked; applyBackground(); saveSettings(); });
+els.selBgStyle.addEventListener('change', e=>{ settings.bgStyle=e.target.value; applyBgStyle(); saveSettings(); });
 
 function openSettings(){ els.sheet.classList.add('open'); renderMorphList(); }
 function closeSettings(){ els.sheet.classList.remove('open'); }

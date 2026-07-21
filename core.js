@@ -126,7 +126,7 @@ const MANAGED = ['hips','spine','chest','upperChest','neck','head','leftEye','ri
 export { renderer, scene, camera, controls, canvas, clock, rig, MANAGED, resize, LS, idbGet, idbPut };
 
 export const settings = LS.get('cb.settings', { name:'', pronouns:'', showPlate:true,
-  bgA:'#141a2c', bgB:'#05060b', bgAuto:true, saver:false, morphs:{}, tailCurl:0, tailLift:0, camOffsetY:0,
+  bgA:'#141a2c', bgB:'#05060b', bgAuto:true, bgStyle:'orbs', saver:false, morphs:{}, tailCurl:0, tailLift:0, camOffsetY:0,
   camLock:false, autoReturn:0, viewDefault:null, mode:'setup', keepAwake:true,
   motion:false, parallax:false, particles:true,
   look:'studio', lightOn:true, lightIntensity:1, rimIntensity:1 });

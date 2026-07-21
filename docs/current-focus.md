@@ -4,31 +4,38 @@ _Keep this short. Update it whenever the active thread of work changes —
 this is the first thing to read at the start of a new session._
 
 Active area:
-- **Lively backdrop** (build `b76`, working tree, not yet confirmed on-device).
-  Replaced the inert static-gradient background with a CSS backdrop layer:
-  three soft blurred orbs that (1) slowly drift on their own keyframes, (2)
-  slide opposite the camera swing during tilt parallax for a depth cue, and
-  (3) can colour-match the active lighting Look. New surfaces:
-  - `index.html` — `#bg-orbs` markup, orb/drift CSS, `--orb-a/-b/-c` + `--px/--py`
-    vars, and a **Match lighting** toggle in the Background card.
-  - `light.js` — each Look gained a `bg` block; new `lookBackground()` export.
-  - `ui.js` — `applyBackground()` is the single writer of the backdrop CSS vars
-    (Look-matched when `settings.bgAuto`, else manual pickers).
+- **Lively backdrop** (build `b77`, working tree, not yet confirmed on-device).
+  Replaced the inert static-gradient background with a CSS `#backdrop` layer
+  that (1) offers **selectable styles**, (2) slides opposite the camera swing
+  during tilt parallax for a depth cue, and (3) can colour-match the active
+  lighting Look. `b76` added the system + orbs; `b77` added the style selector
+  (orbs / starfield / aurora / plain). Surfaces:
+  - `index.html` — `#backdrop[data-style]` with orbs/stars/aurora layers, their
+    CSS, `--orb-a/-b/-c` + `--px/--py` vars, and the Background card's **Style**
+    selector + **Match lighting** toggle.
+  - `light.js` — each Look gained a `bg` block; `lookBackground()` export.
+  - `ui.js` — `applyBackground()` writes the colour vars (Look-matched when
+    `settings.bgAuto`, else manual pickers); `applyBgStyle()` swaps the layer;
+    `buildStarfield()` generates the box-shadow star fields once.
   - `camera.js` — `updateBackdrop()` writes `--px/--py` from parallax each frame.
-  - `config.js` — `BG_PARALLAX_PX` (backdrop slide amplitude); `bgAuto` default
-    in `core.js`.
-  Verified: all 5 changed files parse in module mode; runtime check in the
-  preview confirmed `applyBackground()` populates the Look palette and all three
-  orbs render + animate. Awaiting on-device confirmation of the build stamp
-  and the tilt/drift feel.
+  - `config.js` — `BG_PARALLAX_PX`; `bgAuto`/`bgStyle` defaults in `core.js`.
+  Verified per build: all changed files parse in module mode; preview runtime
+  check confirmed the colour vars populate from the Look and every style layer
+  shows/hides correctly (starfield generates 70/45/24 dots across 3 depths).
+  WebGL rAF loop blocks pixel screenshots in the sandbox — visual feel is an
+  on-device check. Awaiting on-device confirmation of the `b77` stamp + feel.
 
 Tunable-by-feel knobs for the next round (user tunes, Claude bakes):
 - `CONFIG.BG_PARALLAX_PX` (default 34) — how far the backdrop slides on tilt;
   0 = static. Sign of the slide is set in `camera.js:updateBackdrop`.
-- Orb colours per Look live in each Look's `bg.orbs` in `light.js`.
-- Drift speed/throw = the `drift1/2/3` keyframes + orb sizes/positions in
-  `index.html`. Deferred idea #4 (multi-layer particles/bokeh at different
-  depth multipliers) is explicitly on the back burner.
+- Per-style: orb sizes/positions + `drift1/2/3`; aurora bands + `aur1/2/3`;
+  star counts/colours in `ui.js:buildStarfield` + depth/twinkle in the
+  `.sl1/2/3` rules. Colours per Look live in each Look's `bg` in `light.js`.
+- Deferred: **Tier-1 3D background** (equirectangular HDRI/360 skybox as
+  `scene.background`, pairing with parallax + env lighting) — discussed and
+  wanted; parked because in-game VRChat 360 capture looks deprecated, so start
+  from a CC0 HDRI (Poly Haven) instead. Also idea #4 (multi-layer bokeh at
+  different depths) still on the back burner.
 
 Recently completed (per commit history):
 - Lighting / shading "Look" system (confirmed live, build `b75`)
