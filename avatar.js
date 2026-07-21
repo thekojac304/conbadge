@@ -5,10 +5,12 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { frameCamera } from './camera.js';
 import { idle, gestures, reactions } from './anim.js';
+import { applyLook } from './light.js';
 
 let meshDiag = [];
 let morphInfo = '';
 let attachedInfo = '';
+let lookInfo = '';
 
 // Priority lists so we degrade gracefully across VRM 0.x / 1.0 + custom names.
 const EXPR_CANDIDATES = {
@@ -304,6 +306,9 @@ async function mountVRM(buffer, filename){
   scene.add(v.scene);
   S.vrm = v;
 
+  // Apply the current lighting Look to the freshly loaded materials.
+  try{ lookInfo = applyLook(v); }catch(e){ lookInfo=''; console.warn('[conbadge] applyLook failed', e); }
+
   // Resolve rig ------------------------------------------------------------
   // Normalized bones = what we ANIMATE (three-S.vrm maps them to raw in update()).
   // Raw bones = the actual scene nodes that skin the mesh; their world positions
@@ -393,7 +398,8 @@ async function mountVRM(buffer, filename){
     `VRM ${ver} · ${CONFIG.BUILD} · meshes ${visMesh}/${meshCount}${attachedInfo}\n${morphInfo}\n`+
     meshDiag.join('\n')+`\n`+
     `face: ${Object.keys(rig.morphs||{}).filter(k=>rig.morphs[k]?.length).join(',')||'none'}\n`+
-    `tail ${rig.tail.length} ears ${rig.ears.length} springs ${springCount}`;
+    `tail ${rig.tail.length} ears ${rig.ears.length} springs ${springCount}`+
+    (lookInfo?`\n${lookInfo}`:'');
   toast(info, 9000);
   console.log('[conbadge]', info.replace(/\n/g,' | '), rig.morphs);
   hooks.onAvatarLoaded?.();

@@ -343,6 +343,27 @@
           </div>
           <div class="preset-row" id="bg-presets"></div>
         </div>
+
+        <div class="card">
+          <div class="inline">
+            <span>Lighting<small>Stylised lighting &amp; shading</small></span>
+            <label class="switch"><input type="checkbox" id="tg-light" /><span class="track"></span><span class="knob"></span></label>
+          </div>
+          <div class="inline">
+            <span>Look</span>
+            <select id="sel-look"></select>
+          </div>
+          <div class="slider-row">
+            <label for="light-int">Brightness</label>
+            <input type="range" id="light-int" min="40" max="180" value="100" />
+            <span class="sv" id="light-int-v">100</span>
+          </div>
+          <div class="slider-row">
+            <label for="rim-int">Rim light</label>
+            <input type="range" id="rim-int" min="0" max="200" value="100" />
+            <span class="sv" id="rim-int-v">100</span>
+          </div>
+        </div>
       </section>
 
       <!-- ---------- CAMERA ---------- -->

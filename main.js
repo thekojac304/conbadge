@@ -6,6 +6,7 @@ import { pose, flushExpr } from './pose.js';
 import { idle, gestures, reactions, petting, particles, applyTailPose, applyEarPose,
          decayImpulses, applyHipsDrop } from './anim.js';
 import { clampCameraTarget, applyView, updateParallax, renderScene } from './camera.js';
+import { initLights, updateLights } from './light.js';
 import { updateZoneDebug, updateTrail } from './input.js';
 import { mountVRM } from './avatar.js';
 import { applySettings, applyCamLock, syncFullscreenClass, acquireWake, motionNote, els } from './ui.js';
@@ -48,6 +49,7 @@ function loop(){
   particles.update(dt);
   updateTrail(dt);
   updateParallax(dt);
+  updateLights(dt);
   renderScene();
 }
 
@@ -58,6 +60,7 @@ function loop(){
 async function boot(){
   applySettings();
   applyCamLock();
+  initLights();     // scene lights + tone mapping (light.js owns them)
   document.body.classList.toggle('mode-play', settings.mode==='play');
   document.getElementById('tg-wake').checked = settings.keepAwake !== false;
   document.getElementById('tg-particles').checked = settings.particles !== false;

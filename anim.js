@@ -259,6 +259,12 @@ const GESTURES = {
       pose.add('rightLowerArm', 0, 0, (2.30 + s*0.09)*e);
       pose.add('rightHand',     0, 0, (0.12 + s*0.30)*e);
     }
+    // Tuned refinement (Cover Tuner): raise the shoulder into the scratch and
+    // fold the elbow so the paw sits closer to the head. Elbow fold (Y) eased
+    // back from 0.61 → 0.40: a hard fold pinches the inner-elbow mesh (a rig
+    // weighting limit), and the shoulder raise holds the paw up without it.
+    pose.add('rightShoulder', 0.31*e, 0.33*e,  0.03*e);
+    pose.add('rightLowerArm', 0.23*e, 0.40*e, -0.40*e);
     pose.add('head', 0.04*e, -0.09*e, -0.12*e);      // leans into it
     pose.add('neck', 0, -0.05*e, -0.06*e);
     earImpulse = Math.max(earImpulse, 0.4*e);
@@ -421,6 +427,7 @@ function applyEarPose(time){
     _te.set(flick + drift, 0, dir*(flick*0.55 + drift*0.4), 'XYZ');
     _tq.setFromEuler(_te);
     rig.ears[i].quaternion.copy(rig.earsRest[i]).multiply(_tq);
+    tunerAddTo(rig.ears[i], 'ear'+i);          // live tuner offset, if any
   }
 }
 
@@ -496,6 +503,7 @@ function applyTailPose(time){
 
     _te.set(ex, ey, ez, 'XYZ'); _tq.setFromEuler(_te);
     rig.tail[i].quaternion.copy(rig.tailRest[i]).multiply(_tq);
+    tunerAddTo(rig.tail[i], 'tail'+i);         // live tuner offset, if any
   }
 }
 
@@ -826,7 +834,17 @@ const reactions = {
    on-screen panel (ui.js), which prints the offsets to bake into the code.
    Overrides are ADDITIVE deltas on the held animation's own pose.
    =========================================================================== */
-const tuner = { active:false, kind:null, name:null, overrides:{} };
+const tuner = { active:false, kind:null, name:null, overrides:{}, face:{} };
+const _tue = new THREE.Euler(), _tuq = new THREE.Quaternion();
+// Adds a tuner override onto a non-humanoid node (ears/tail) AFTER its
+// procedural pose is written, so the offset layers on instead of being lost.
+function tunerAddTo(node, key){
+  if (!tuner.active || !node) return;
+  const o = tuner.overrides[key];
+  if (!o) return;
+  if (o[0]||o[1]||o[2]){ _tue.set(o[0],o[1],o[2],'XYZ'); _tuq.setFromEuler(_tue); node.quaternion.multiply(_tuq); }
+  if (o[3]){ _tue.set(o[3],0,0,'XYZ'); _tuq.setFromEuler(_tue); node.quaternion.multiply(_tuq); }
+}
 
 function tunerHold(kind, name){
   // stop whatever's playing, then hold the requested animation frozen at peak
@@ -854,8 +872,13 @@ function applyTuner(){
   if (!tuner.active) return;
   for (const b in tuner.overrides){
     const o = tuner.overrides[b];
-    if (o && (o[0] || o[1] || o[2])) pose.add(b, o[0], o[1], o[2]);
+    if (!o) continue;
+    // ear/tail keys aren't humanoid bones — pose.add/twist no-op on them; they
+    // are applied in applyEarPose/applyTailPose via tunerAddTo instead.
+    if (o[0] || o[1] || o[2]) pose.add(b, o[0], o[1], o[2]);
+    if (o[3]) pose.twist(b, o[3]);        // axial roll (4th channel)
   }
+  for (const s in tuner.face){ if (tuner.face[s]) setExpr(s, tuner.face[s]); }
 }
 
 // Applies the idle bounce's hip sink plus any gesture-requested lift. Rotations

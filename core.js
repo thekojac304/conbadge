@@ -53,10 +53,9 @@ const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(30, 1, 0.05, 40);
 camera.position.set(0, 1.35, 1.4);
 
-// Soft, flattering lighting for MToon/standard materials.
-scene.add(new THREE.HemisphereLight(0xffffff, 0x223044, 1.15));
-const key = new THREE.DirectionalLight(0xffffff, 1.4); key.position.set(0.6, 1.4, 1.2); scene.add(key);
-const rim = new THREE.DirectionalLight(0x8fb4ff, 0.5);  rim.position.set(-0.8, 1.0, -1.2); scene.add(rim);
+// Scene lights + tone mapping are owned by light.js (initLights()), so the whole
+// lighting system stays in one removable module. See light.js BASE for the
+// original baseline rig if you ever strip that module back out.
 
 const controls = new OrbitControls(camera, renderer.domElement);
 // Two-finger drag pans VERTICALLY only (clamped in clampCameraTarget) so you
@@ -105,12 +104,23 @@ const rig = {
   forward:null,      // detected facing direction (touch zones project along it)
 };
 
-// Names we drive on the humanoid rig. Null-guarded at resolve time.
-const MANAGED = ['hips','spine','chest','upperChest','neck','head','leftEye','rightEye',
+// Names we drive on the humanoid rig. Null-guarded at resolve time, so listing
+// a bone the avatar lacks is harmless — it simply isn't resolved. Fingers/toes/
+// jaw are included so the Animation Tuner can pose them (VRM 1.0 normalized
+// names; three-vrm maps VRM 0.x thumbs onto Metacarpal/Proximal/Distal).
+const FINGER_BONES = (()=>{ const out=[];
+  for (const s of ['left','right']){
+    out.push(s+'ThumbMetacarpal', s+'ThumbProximal', s+'ThumbDistal');
+    for (const f of ['Index','Middle','Ring','Little'])
+      out.push(s+f+'Proximal', s+f+'Intermediate', s+f+'Distal');
+  }
+  return out; })();
+const MANAGED = ['hips','spine','chest','upperChest','neck','head','leftEye','rightEye','jaw',
   'leftShoulder','leftUpperArm','leftLowerArm','leftHand',
   'rightShoulder','rightUpperArm','rightLowerArm','rightHand',
-  'leftUpperLeg','leftLowerLeg','leftFoot',
-  'rightUpperLeg','rightLowerLeg','rightFoot'];
+  'leftUpperLeg','leftLowerLeg','leftFoot','leftToes',
+  'rightUpperLeg','rightLowerLeg','rightFoot','rightToes',
+  ...FINGER_BONES];
 
 
 export { renderer, scene, camera, controls, canvas, clock, rig, MANAGED, resize, LS, idbGet, idbPut };
@@ -118,7 +128,8 @@ export { renderer, scene, camera, controls, canvas, clock, rig, MANAGED, resize,
 export const settings = LS.get('cb.settings', { name:'', pronouns:'', showPlate:true,
   bgA:'#141a2c', bgB:'#05060b', saver:false, morphs:{}, tailCurl:0, tailLift:0, camOffsetY:0,
   camLock:false, autoReturn:0, viewDefault:null, mode:'setup', keepAwake:true,
-  motion:false, parallax:false, particles:true });
+  motion:false, parallax:false, particles:true,
+  look:'studio', lightOn:true, lightIntensity:1, rimIntensity:1 });
 settings.morphs = settings.morphs || {};
 settings.tailCurl = Math.max(0, settings.tailCurl||0);
 export function saveSettings(){ LS.set('cb.settings', settings); }

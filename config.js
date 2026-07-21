@@ -1,6 +1,8 @@
 // Con Badge — tuning constants and the touch-zone map.
 export const CONFIG = {
-  BUILD: 'b68',            // bump on each new version — shown in the load readout
+  BUILD: 'b74',            // bump on each new version — shown in the load readout
+  LIGHTING: true,          // master switch for the light.js Look system (false = flat baseline)
+  LIGHTING_DEFAULT: 'studio', // Look used when the user hasn't picked one (see LOOKS in light.js)
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
   ORBIT_AZIMUTH: 0.62,     // rad: how far left/right you can orbit (clamped both ways)
   ORBIT_POLAR_LO: 1.12,    // rad from +Y: how far you can look down over the top

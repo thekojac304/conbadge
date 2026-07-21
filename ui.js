@@ -6,6 +6,7 @@ import { CONFIG } from './config.js';
 import { mountVRM } from './avatar.js';
 import { frameCamera, currentView, applyView, saveCamOffset, frameTarget } from './camera.js';
 import { gestures, reactions, GESTURE_LIST, tuner, tunerHold, tunerRelease } from './anim.js';
+import { LOOK_LIST, applyLightRig, applyLook } from './light.js';
 
 
 
@@ -19,6 +20,12 @@ const els = {
   tgSaver:document.getElementById('tg-saver'),
   bgA:document.getElementById('bg-a'),
   bgB:document.getElementById('bg-b'),
+  tgLight:document.getElementById('tg-light'),
+  selLook:document.getElementById('sel-look'),
+  lightInt:document.getElementById('light-int'),
+  lightIntV:document.getElementById('light-int-v'),
+  rimInt:document.getElementById('rim-int'),
+  rimIntV:document.getElementById('rim-int-v'),
   stage:document.getElementById('stage'),
   sheet:document.getElementById('settings'),
 };
@@ -33,8 +40,47 @@ function applySettings(){
   els.inName.value=settings.name; els.inPro.value=settings.pronouns;
   els.tgPlate.checked=settings.showPlate; els.tgSaver.checked=settings.saver;
   els.bgA.value=settings.bgA; els.bgB.value=settings.bgB;
+  reflectLighting();
   resize();
 }
+
+/* ---- Lighting Look, Brightness, Rim -------------------------------------- */
+// Populate the Look selector from light.js's registry.
+els.selLook.innerHTML = LOOK_LIST.map(o=>`<option value="${o.key}">${o.label}</option>`).join('');
+
+// Mirror the stored lighting settings into the controls + grey out the Look
+// style / sliders when the whole system is switched off.
+function reflectLighting(){
+  const on = settings.lightOn !== false;
+  els.tgLight.checked = on;
+  els.selLook.value   = settings.look || 'studio';
+  els.lightInt.value  = Math.round((settings.lightIntensity ?? 1)*100);
+  els.rimInt.value    = Math.round((settings.rimIntensity   ?? 1)*100);
+  els.lightIntV.textContent = els.lightInt.value;
+  els.rimIntV.textContent   = els.rimInt.value;
+  els.selLook.disabled = els.lightInt.disabled = els.rimInt.disabled = !on;
+}
+
+els.tgLight.addEventListener('change', e=>{
+  settings.lightOn = e.target.checked; saveSettings();
+  reflectLighting();
+  applyLightRig();                 // switch the rig on/off live
+  if (S.vrm) applyLook(S.vrm);     // MToon treatment on when on, restored when off
+});
+els.selLook.addEventListener('change', e=>{
+  settings.look = e.target.value; saveSettings();
+  applyLightRig();                 // relight live
+  if (S.vrm) applyLook(S.vrm);     // re-treat materials live
+});
+// Brightness + Rim only scale the light rig, so no material re-treat needed.
+els.lightInt.addEventListener('input', e=>{
+  settings.lightIntensity = +e.target.value/100; els.lightIntV.textContent = e.target.value; applyLightRig();
+});
+els.rimInt.addEventListener('input', e=>{
+  settings.rimIntensity = +e.target.value/100; els.rimIntV.textContent = e.target.value; applyLightRig();
+});
+els.lightInt.addEventListener('change', saveSettings);
+els.rimInt.addEventListener('change', saveSettings);
 
 els.inName.addEventListener('input', e=>{ settings.name=e.target.value; applySettings(); saveSettings(); });
 els.inPro.addEventListener('input',  e=>{ settings.pronouns=e.target.value; applySettings(); saveSettings(); });
@@ -132,35 +178,50 @@ const BG_PRESETS = [
 
 /* ---- Animation Tuner ----------------------------------------------------
    Universal pose tuner. Pick any gesture or reaction; it holds that animation
-   frozen at its peak so it sits still, then per-bone X/Y/Z sliders add offsets
-   on top in real time. The readout prints the offsets as pose.add() deltas to
-   bake into the animation's code. A "Tuner" chip is appended to the test bar
-   (setup mode only). Offsets are ADDITIVE on the animation's own pose. */
+   frozen at its peak so it sits still, then per-bone X/Y/Z + twist sliders add
+   offsets on top in real time. The bone list is built from the LOADED rig, so
+   every bone the avatar has (fingers, toes, jaw, eyes, …) is posable. The
+   readout prints the offsets as pose.add()/pose.twist() deltas to bake in. A
+   "Tuner" chip is appended to the test bar. Offsets are ADDITIVE on the
+   animation's own pose. */
 (function(){
   const box = document.getElementById('test-chips');
   if (!box) return;
 
-  // Animations the tuner can hold. Reactions carry an optional :side.
   const REACTIONS = ['happy','blush','giggle','bellyRub','fluster','dizzy','boop','wave:right','wave:left'];
-  // [vrmBoneName, friendly label]. The lower-arm/lower-leg bones ARE the elbow
-  // and knee — bending them is flexion. Labels make that obvious; the real bone
-  // name is what goes into the readout / pose.add lines.
-  const BONES = [
-    ['head','Head'], ['neck','Neck'], ['upperChest','Upper chest'],
-    ['chest','Chest'], ['spine','Spine'], ['hips','Hips'],
-    ['leftShoulder','L shoulder (clavicle)'], ['rightShoulder','R shoulder (clavicle)'],
-    ['leftUpperArm','L upper arm (shoulder joint)'], ['rightUpperArm','R upper arm (shoulder joint)'],
-    ['leftLowerArm','L forearm — ELBOW flex'], ['rightLowerArm','R forearm — ELBOW flex'],
-    ['leftHand','L hand / wrist'], ['rightHand','R hand / wrist'],
-    ['leftUpperLeg','L thigh (hip joint)'], ['rightUpperLeg','R thigh (hip joint)'],
-    ['leftLowerLeg','L shin — KNEE flex'], ['rightLowerLeg','R shin — KNEE flex'],
-    ['leftFoot','L foot / ankle'], ['rightFoot','R foot / ankle'],
-  ];
-  const AXES = ['x','y','z'];
-  const RANGE = 1.6;   // slider extent per axis (radians)
+  // X/Y/Z euler + a twist (axial roll → pose.twist). Index maps to override[i].
+  const CTRLS = [['x','X'],['y','Y'],['z','Z'],['w','Twist (roll)']];
+  const RANGE = 1.8;   // slider extent (radians)
 
-  const inp = (id,extra='') =>
-    `<input id="${id}" ${extra} style="width:100%">`;
+  // Friendly labels for the joints; everything else (fingers, toes) is prettified.
+  const LABELS = {
+    leftLowerArm:'L forearm — ELBOW', rightLowerArm:'R forearm — ELBOW',
+    leftLowerLeg:'L shin — KNEE', rightLowerLeg:'R shin — KNEE',
+    leftUpperArm:'L upper arm (shoulder)', rightUpperArm:'R upper arm (shoulder)',
+    leftUpperLeg:'L thigh (hip)', rightUpperLeg:'R thigh (hip)',
+    leftHand:'L hand / wrist', rightHand:'R hand / wrist',
+    leftFoot:'L foot / ankle', rightFoot:'R foot / ankle',
+    leftShoulder:'L shoulder (clavicle)', rightShoulder:'R shoulder (clavicle)',
+  };
+  function pretty(n){
+    let pre='';
+    if (n.startsWith('left'))  { pre='L '; n=n.slice(4); }
+    else if (n.startsWith('right')) { pre='R '; n=n.slice(5); }
+    n = n.replace(/([a-z])([A-Z])/g,'$1 $2');
+    return pre + n.charAt(0).toUpperCase() + n.slice(1);
+  }
+  const label = n => LABELS[n] || pretty(n);
+  function group(n){
+    if (/Thumb|Index|Middle|Ring|Little/.test(n)) return n.startsWith('left') ? 'Left hand — fingers' : 'Right hand — fingers';
+    if (/^left(Shoulder|UpperArm|LowerArm|Hand)/.test(n))  return 'Left arm';
+    if (/^right(Shoulder|UpperArm|LowerArm|Hand)/.test(n)) return 'Right arm';
+    if (/^left(UpperLeg|LowerLeg|Foot|Toes)/.test(n))  return 'Left leg';
+    if (/^right(UpperLeg|LowerLeg|Foot|Toes)/.test(n)) return 'Right leg';
+    return 'Body / head';
+  }
+  const GROUP_ORDER = ['Body / head','Left arm','Left hand — fingers','Right arm',
+                       'Right hand — fingers','Left leg','Right leg'];
+
   const btn = (id,txt,flex='') =>
     `<button id="${id}" style="${flex}padding:6px 9px;border-radius:6px;border:1px solid #2b3a55;`+
     `background:#1c2740;color:#e8eefc;cursor:pointer">${txt}</button>`;
@@ -168,18 +229,16 @@ const BG_PRESETS = [
   const panel = document.createElement('div');
   panel.id = 'anim-tuner';
   panel.style.cssText =
-    'position:fixed;right:8px;top:8px;width:262px;max-height:92vh;overflow:auto;'+
+    'position:fixed;right:8px;top:8px;width:268px;max-height:94vh;overflow:auto;'+
     'z-index:9999;background:rgba(12,16,24,.94);color:#e8eefc;border:1px solid #2b3a55;'+
     'border-radius:10px;padding:10px 12px;font:12px/1.35 system-ui,sans-serif;'+
     'box-shadow:0 6px 24px rgba(0,0,0,.5);display:none;';
 
   const optList = (arr,tag) => arr.map(n=>`<option value="${tag}:${n}">${n} (${tag[0]})</option>`).join('');
   let html =
-    // The native dropdown popup renders on a white background, so the panel's
-    // light text is unreadable there — colour the select/option explicitly.
     '<style>'+
-      '#anim-tuner select{background:#1c2740;color:#e8eefc;border:1px solid #2b3a55;'+
-        'border-radius:6px;padding:5px}'+
+      '#anim-tuner select,#anim-tuner input[type=text]{background:#1c2740;color:#e8eefc;'+
+        'border:1px solid #2b3a55;border-radius:6px;padding:5px;width:100%;box-sizing:border-box}'+
       '#anim-tuner option{background:#12192a;color:#e8eefc}'+
       '#anim-tuner optgroup{background:#0b1018;color:#8fb0e0;font-style:normal}'+
     '</style>'+
@@ -188,66 +247,150 @@ const BG_PRESETS = [
       '<button id="tn-close" style="background:none;border:0;color:#9fb3d9;font-size:16px;cursor:pointer">✕</button>'+
     '</div>'+
     '<label style="display:block;margin-bottom:2px;color:#9fb3d9">Animation</label>'+
-    `<select id="tn-anim" style="width:100%;margin-bottom:8px">`+
+    `<select id="tn-anim" style="margin-bottom:8px">`+
       `<optgroup label="Gestures">${optList(GESTURE_LIST,'gesture')}</optgroup>`+
       `<optgroup label="Reactions">${optList(REACTIONS,'reaction')}</optgroup>`+
     `</select>`+
     '<label style="display:block;margin-bottom:2px;color:#9fb3d9">Bone / joint</label>'+
-    `<select id="tn-bone" style="width:100%;margin-bottom:8px">`+
-      BONES.map(([b,lbl])=>`<option value="${b}">${lbl}</option>`).join('')+
-    `</select>`;
-  for (const ax of AXES){
+    `<input type="text" id="tn-filter" placeholder="filter bones (e.g. finger, knee)…" style="margin-bottom:5px">`+
+    `<select id="tn-bone" size="1" style="margin-bottom:8px"></select>`;
+  for (const [ax,lbl] of CTRLS){
     html +=
-      `<label style="display:block;margin:6px 0 2px">${ax.toUpperCase()} `+
+      `<label style="display:block;margin:6px 0 2px">${lbl} `+
       `<span id="tn-v-${ax}" style="float:right;color:#8fd0ff;font-variant-numeric:tabular-nums"></span></label>`+
-      inp(`tn-s-${ax}`, `type="range" min="${-RANGE}" max="${RANGE}" step="0.01"`);
+      `<input type="range" id="tn-s-${ax}" min="${-RANGE}" max="${RANGE}" step="0.01" style="width:100%">`;
   }
   html +=
     '<div style="display:flex;gap:6px;margin-top:10px">'+
-      btn('tn-copy','Copy deltas','flex:1;')+ btn('tn-zero','Zero bone')+ btn('tn-reset','Reset all')+
+      btn('tn-mirror-lr','L→R','flex:1;')+ btn('tn-mirror-rl','R→L','flex:1;')+
+      btn('tn-zero','Zero')+
     '</div>'+
-    '<textarea id="tn-out" readonly style="width:100%;height:120px;margin-top:8px;box-sizing:border-box;'+
+    // Face / expression morphs (mouth, blink, blush, brows, tongue …) — a
+    // separate channel from bones, driven via setExpr. Built from the avatar.
+    '<div style="margin-top:12px;color:#9fb3d9;border-top:1px solid #24314c;padding-top:8px">'+
+      '<b>Face / expression</b></div>'+
+    '<div id="tn-face"></div>'+
+    '<div style="display:flex;gap:6px;margin-top:10px">'+
+      btn('tn-copy','Copy deltas','flex:1;')+ btn('tn-reset','Reset all')+
+    '</div>'+
+    '<textarea id="tn-out" readonly style="width:100%;height:130px;margin-top:8px;box-sizing:border-box;'+
     'background:#0b1018;color:#bfe0ff;border:1px solid #2b3a55;border-radius:6px;font:11px/1.3 monospace;padding:6px"></textarea>';
   panel.innerHTML = html;
   document.body.appendChild(panel);
 
   const el = id => document.getElementById(id);
   const cur = () => el('tn-bone').value;
-  const ov  = b => (tuner.overrides[b] ||= [0,0,0]);
+  const ov  = b => { let o = tuner.overrides[b]; if (!o){ o=[0,0,0,0]; tuner.overrides[b]=o; } return o; };
+
+  // Build the bone dropdown from the LOADED rig, grouped + filtered.
+  function buildBones(){
+    const sel = el('tn-bone');
+    const names = Object.keys(rig.bones || {});
+    if (!names.length){ sel.innerHTML = '<option value="">— load an avatar first —</option>'; return; }
+    const f = (el('tn-filter').value || '').trim().toLowerCase();
+    const groups = {};
+    for (const n of names){
+      if (f && !n.toLowerCase().includes(f) && !label(n).toLowerCase().includes(f)) continue;
+      (groups[group(n)] ||= []).push(n);
+    }
+    const order = [...GROUP_ORDER, ...Object.keys(groups).filter(g=>!GROUP_ORDER.includes(g))];
+    let h = '';
+    for (const g of order){
+      if (!groups[g]) continue;
+      h += `<optgroup label="${g}">` +
+           groups[g].map(n=>`<option value="${n}">${label(n)}</option>`).join('') + '</optgroup>';
+    }
+    // Ears/tail are non-humanoid nodes — expose them with synthetic keys
+    // (ear0…, tail0…) that applyEarPose/applyTailPose pick up via tunerAddTo.
+    const extras = [];
+    for (let i=0;i<(rig.ears?.length||0);i++) extras.push(['ear'+i, 'Ear '+i]);
+    for (let i=0;i<(rig.tail?.length||0);i++) extras.push(['tail'+i, 'Tail '+(i+1)]);
+    const fe = extras.filter(([k,l]) => !f || k.includes(f) || l.toLowerCase().includes(f));
+    if (fe.length) h += `<optgroup label="Ears / tail">` +
+      fe.map(([k,l])=>`<option value="${k}">${l}</option>`).join('') + '</optgroup>';
+    const prev = sel.value;
+    sel.innerHTML = h || '<option value="">(no match)</option>';
+    if (prev && [...sel.options].some(o=>o.value===prev)) sel.value = prev;
+  }
+
+  // Face / expression sliders, built from the avatar's animatable morphs.
+  function buildFace(){
+    const wrap = el('tn-face');
+    const morphs = Object.keys(rig.morphs || {});
+    if (!morphs.length){ wrap.innerHTML = '<div style="color:#8090a8;margin:4px 0">No expression morphs on this avatar.</div>'; return; }
+    wrap.innerHTML = morphs.map((m,i)=>
+      `<label style="display:block;margin:5px 0 2px">${m} `+
+      `<span id="tn-fv-${i}" style="float:right;color:#8fd0ff;font-variant-numeric:tabular-nums"></span></label>`+
+      `<input type="range" id="tn-fs-${i}" min="0" max="1" step="0.01" style="width:100%">`
+    ).join('');
+    morphs.forEach((m,i)=>{
+      const s = el('tn-fs-'+i), v = el('tn-fv-'+i);
+      const cur0 = tuner.face[m] || 0;
+      s.value = cur0; v.textContent = cur0.toFixed(2);
+      s.addEventListener('input', ev=>{
+        tuner.face[m] = parseFloat(ev.target.value);
+        v.textContent = tuner.face[m].toFixed(2);
+        readout();
+      });
+    });
+  }
 
   function readout(){
     const anim = el('tn-anim').value.split(':').slice(1).join(':');
     const lines = [];
-    for (const [b] of BONES){
-      const o = tuner.overrides[b];
-      if (o && (o[0]||o[1]||o[2]))
-        lines.push(`pose.add('${b}', ${o[0].toFixed(2)}, ${o[1].toFixed(2)}, ${o[2].toFixed(2)});`);
+    for (const b in tuner.overrides){
+      const o = tuner.overrides[b]; if (!o) continue;
+      const special = /^(ear|tail)\d+$/.test(b);   // ears/tail applied specially
+      if (o[0]||o[1]||o[2]) lines.push(special
+        ? `// ${b}: rotate ${o[0].toFixed(2)}, ${o[1].toFixed(2)}, ${o[2].toFixed(2)}`
+        : `pose.add('${b}', ${o[0].toFixed(2)}, ${o[1].toFixed(2)}, ${o[2].toFixed(2)});`);
+      if (o[3]) lines.push(special
+        ? `// ${b}: twist ${o[3].toFixed(2)}`
+        : `pose.twist('${b}', ${o[3].toFixed(2)});`);
     }
+    for (const s in tuner.face){ if (tuner.face[s]) lines.push(`setExpr('${s}', ${tuner.face[s].toFixed(2)});`); }
     el('tn-out').value = `// ${anim} — additive deltas\n` + (lines.join('\n') || '// (no offsets yet)');
   }
   function syncSliders(){
-    const o = ov(cur());
-    AXES.forEach((ax,i)=>{
-      el('tn-s-'+ax).value = o[i];
-      el('tn-v-'+ax).textContent = (o[i]>=0?' ':'') + o[i].toFixed(2);
+    const o = cur() ? ov(cur()) : [0,0,0,0];
+    CTRLS.forEach(([ax],i)=>{
+      const v = o[i] || 0;
+      el('tn-s-'+ax).value = v;
+      el('tn-v-'+ax).textContent = (v>=0?' ':'') + v.toFixed(2);
     });
   }
   function refresh(){ syncSliders(); readout(); }
 
-  AXES.forEach((ax,i)=>{
+  CTRLS.forEach(([ax],i)=>{
     el('tn-s-'+ax).addEventListener('input', ev=>{
+      if (!cur()) return;
       ov(cur())[i] = parseFloat(ev.target.value);
       el('tn-v-'+ax).textContent = (ov(cur())[i]>=0?' ':'') + ov(cur())[i].toFixed(2);
       readout();
     });
   });
   el('tn-bone').addEventListener('change', syncSliders);
+  el('tn-filter').addEventListener('input', ()=>{ buildBones(); syncSliders(); });
   el('tn-anim').addEventListener('change', ()=>{
     const [kind, ...rest] = el('tn-anim').value.split(':');
     tunerHold(kind, rest.join(':'));
   });
-  el('tn-zero').addEventListener('click', ()=>{ tuner.overrides[cur()] = [0,0,0]; refresh(); });
-  el('tn-reset').addEventListener('click', ()=>{ tuner.overrides = {}; refresh(); });
+  el('tn-zero').addEventListener('click', ()=>{ if(cur()){ tuner.overrides[cur()] = [0,0,0,0]; refresh(); } });
+  el('tn-reset').addEventListener('click', ()=>{ tuner.overrides = {}; tuner.face = {}; buildFace(); refresh(); });
+
+  // Mirror every override on one side to the other. Across the sagittal plane
+  // the world-aligned bones negate Y, Z and the axial twist; X carries over.
+  function mirror(from){
+    const to = from==='left' ? 'right' : 'left';
+    for (const b of Object.keys(tuner.overrides)){
+      if (!b.startsWith(from)) continue;
+      const o = tuner.overrides[b]; if (!o) continue;
+      tuner.overrides[to + b.slice(from.length)] = [o[0]||0, -(o[1]||0), -(o[2]||0), -(o[3]||0)];
+    }
+    refresh();
+  }
+  el('tn-mirror-lr').addEventListener('click', ()=>mirror('left'));
+  el('tn-mirror-rl').addEventListener('click', ()=>mirror('right'));
   el('tn-copy').addEventListener('click', ()=>{
     const out = el('tn-out'); out.select();
     try { navigator.clipboard.writeText(out.value); } catch(e){}
@@ -260,6 +403,8 @@ const BG_PRESETS = [
     open = v;
     panel.style.display = v ? 'block' : 'none';
     if (v){
+      buildBones();
+      buildFace();
       const [kind, ...rest] = el('tn-anim').value.split(':');
       tunerHold(kind, rest.join(':'));
       refresh();
