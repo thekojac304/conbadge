@@ -122,25 +122,42 @@
   #frame{ position:fixed; inset:0; pointer-events:none; z-index:5;
           padding:max(14px, env(safe-area-inset-top)) 14px max(14px, env(safe-area-inset-bottom)); }
   #nameplate{
-    position:absolute; left:50%; bottom:max(20px, env(safe-area-inset-bottom));
-    transform:translateX(-50%); text-align:center; max-width:88%;
-    padding:10px 20px; border-radius:16px;
+    position:absolute; left:50%; transform:translateX(-50%);
+    text-align:center; max-width:88%; padding:10px 20px; border-radius:16px;
+    transition:opacity .35s ease;
+  }
+  /* position: pinned top / bottom, or vertically centred */
+  #nameplate[data-pos="bottom"]{ bottom:max(20px, env(safe-area-inset-bottom)); top:auto; }
+  #nameplate[data-pos="top"]{    top:max(20px, env(safe-area-inset-top)); bottom:auto; }
+  #nameplate[data-pos="middle"]{ top:50%; bottom:auto; transform:translate(-50%,-50%); }
+  /* panel treatment */
+  #nameplate[data-panel-style="frosted"]{
     background:rgba(8,10,16,.44); backdrop-filter:blur(8px);
     border:1px solid var(--stroke);
     box-shadow:0 8px 30px rgba(0,0,0,.35), inset 0 1px 0 rgba(255,255,255,.06);
   }
+  #nameplate[data-panel-style="outline"]{
+    background:rgba(8,10,16,.16); border:1px solid var(--stroke);
+  }
+  #nameplate[data-panel-style="none"]{ padding:4px 8px; }
   #nameplate.hidden{ display:none; }
+  #nameplate.dim{ opacity:0; }          /* auto-hide while a reaction plays */
   #plate-name{
-    font-family:var(--name-face); font-weight:700; letter-spacing:.5px;
-    font-size:clamp(26px,9vw,46px); line-height:1; text-transform:uppercase;
+    font-family:var(--plate-face, var(--name-face)); font-weight:700; letter-spacing:.5px;
+    font-size:calc(clamp(26px,9vw,46px) * var(--plate-scale, 1)); line-height:1;
+    text-transform:var(--plate-case, uppercase); color:var(--plate-color, var(--ink));
     text-shadow:0 2px 12px rgba(0,0,0,.55);
   }
-  #plate-name::after{ /* accent underline that only shows when a name is set */
+  #plate-name::after{ /* accent underline; suppressed when off or the name is empty */
     content:""; display:block; height:3px; width:44px; margin:8px auto 0;
-    background:var(--accent); border-radius:3px; opacity:.9;
+    background:var(--plate-accent, var(--accent)); border-radius:3px; opacity:.9;
   }
-  #plate-pronouns{ margin-top:6px; font-size:clamp(12px,3.6vw,16px);
+  #nameplate[data-underline="off"] #plate-name::after{ display:none; }
+  #plate-pronouns{ margin-top:6px; font-size:calc(clamp(12px,3.6vw,16px) * var(--plate-scale, 1));
                    color:var(--ink-dim); letter-spacing:.4px; }
+  #plate-tagline{ margin-top:4px; font-size:calc(clamp(11px,3.2vw,14px) * var(--plate-scale, 1));
+                  color:var(--plate-accent, var(--accent)); letter-spacing:.3px; opacity:.92; }
+  #plate-tagline:empty{ display:none; }
 
   /* ---- Corner controls -------------------------------------------------- */
   #tools{ position:fixed; z-index:6; top:max(12px,env(safe-area-inset-top)); right:12px;
@@ -330,6 +347,7 @@
     <div id="nameplate" class="hidden">
       <div id="plate-name"></div>
       <div id="plate-pronouns"></div>
+      <div id="plate-tagline"></div>
     </div>
   </div>
 
@@ -399,9 +417,64 @@
             <label for="in-pronouns">Pronouns</label>
             <input type="text" id="in-pronouns" maxlength="24" placeholder="they/them" autocomplete="off" />
           </div>
+          <div class="field">
+            <label for="in-tagline">Tagline</label>
+            <input type="text" id="in-tagline" maxlength="40" placeholder="Ask about my art" autocomplete="off" />
+          </div>
           <div class="inline">
             <span>Show nameplate</span>
             <label class="switch"><input type="checkbox" id="tg-plate" /><span class="track"></span><span class="knob"></span></label>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Nameplate style</div>
+          <div class="inline">
+            <span>Position</span>
+            <select id="sel-platepos">
+              <option value="top">Top</option>
+              <option value="middle">Middle</option>
+              <option value="bottom">Bottom</option>
+            </select>
+          </div>
+          <div class="inline">
+            <span>Font</span>
+            <select id="sel-platefont"></select>
+          </div>
+          <div class="slider-row">
+            <label for="plate-size">Size</label>
+            <input type="range" id="plate-size" min="60" max="160" value="100" />
+            <span class="sv" id="plate-size-v">100</span>
+          </div>
+          <div class="inline">
+            <span>Colors</span>
+            <div class="swatches">
+              <input type="color" id="plate-color"  value="#f4f6fb" aria-label="Text color" />
+              <input type="color" id="plate-accent" value="#6fe3c4" aria-label="Accent color" />
+            </div>
+          </div>
+          <div class="inline">
+            <span>Panel</span>
+            <select id="sel-platepanel">
+              <option value="frosted">Frosted</option>
+              <option value="outline">Outline</option>
+              <option value="none">None</option>
+            </select>
+          </div>
+          <div class="inline">
+            <span>Text case</span>
+            <select id="sel-platecase">
+              <option value="upper">UPPERCASE</option>
+              <option value="normal">As typed</option>
+            </select>
+          </div>
+          <div class="inline">
+            <span>Accent underline</span>
+            <label class="switch"><input type="checkbox" id="tg-plateline" /><span class="track"></span><span class="knob"></span></label>
+          </div>
+          <div class="inline">
+            <span>Auto-hide<small>Fade out during reactions</small></span>
+            <label class="switch"><input type="checkbox" id="tg-platehide" /><span class="track"></span><span class="knob"></span></label>
           </div>
         </div>
 

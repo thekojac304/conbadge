@@ -5,7 +5,7 @@ import { THREE, S, rig, settings, saveSettings, camera, controls, hooks, toast,
 import { CONFIG } from './config.js';
 import { mountVRM } from './avatar.js';
 import { frameCamera, currentView, applyView, saveCamOffset, frameTarget } from './camera.js';
-import { gestures, reactions, GESTURE_LIST, tuner, tunerHold, tunerRelease } from './anim.js';
+import { gestures, reactions, petting, GESTURE_LIST, tuner, tunerHold, tunerRelease } from './anim.js';
 import { LOOK_LIST, applyLightRig, applyLook, lookBackground } from './light.js';
 
 
@@ -14,9 +14,21 @@ const els = {
   plate:document.getElementById('nameplate'),
   pname:document.getElementById('plate-name'),
   ppro:document.getElementById('plate-pronouns'),
+  ptag:document.getElementById('plate-tagline'),
   inName:document.getElementById('in-name'),
   inPro:document.getElementById('in-pronouns'),
+  inTag:document.getElementById('in-tagline'),
   tgPlate:document.getElementById('tg-plate'),
+  selPlatePos:document.getElementById('sel-platepos'),
+  selPlateFont:document.getElementById('sel-platefont'),
+  plateSize:document.getElementById('plate-size'),
+  plateSizeV:document.getElementById('plate-size-v'),
+  plateColor:document.getElementById('plate-color'),
+  plateAccent:document.getElementById('plate-accent'),
+  selPlatePanel:document.getElementById('sel-platepanel'),
+  selPlateCase:document.getElementById('sel-platecase'),
+  tgPlateLine:document.getElementById('tg-plateline'),
+  tgPlateHide:document.getElementById('tg-platehide'),
   tgSaver:document.getElementById('tg-saver'),
   bgA:document.getElementById('bg-a'),
   bgB:document.getElementById('bg-b'),
@@ -32,14 +44,68 @@ const els = {
   sheet:document.getElementById('settings'),
 };
 
+/* ---- Nameplate ------------------------------------------------------------
+   All nameplate visuals are driven through data-attributes + CSS custom
+   properties on #nameplate (the same var-driven pattern as the backdrop), so
+   settings mirror straight into the DOM. Fonts are curated *system* stacks —
+   no web-font fetch, so it renders offline; exact glyphs vary by OS. */
+const PLATE_FONTS = [
+  { key:'condensed', label:'Condensed', stack:'"Arial Narrow","Roboto Condensed","Helvetica Neue",system-ui,sans-serif' },
+  { key:'sans',      label:'Sans',      stack:'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif' },
+  { key:'rounded',   label:'Rounded',   stack:'ui-rounded,"SF Pro Rounded","Hiragino Maru Gothic ProN","Nunito","Quicksand",system-ui,sans-serif' },
+  { key:'serif',     label:'Serif',     stack:'ui-serif,Georgia,"Times New Roman",serif' },
+  { key:'slab',      label:'Slab',      stack:'"Rockwell","Roboto Slab",ui-serif,Georgia,serif' },
+  { key:'mono',      label:'Mono',      stack:'ui-monospace,"SF Mono","Cascadia Mono","Segoe UI Mono",Menlo,Consolas,monospace' },
+  { key:'impact',    label:'Impact',    stack:'"Haettenschweiler","Arial Narrow Bold",Impact,"Franklin Gothic Bold",sans-serif' },
+];
+const PLATE_FONT = Object.fromEntries(PLATE_FONTS.map(f=>[f.key,f.stack]));
+els.selPlateFont.innerHTML = PLATE_FONTS.map(f=>`<option value="${f.key}">${f.label}</option>`).join('');
+
+function applyPlate(){
+  const name = settings.name || '', pro = settings.pronouns || '', tag = settings.tagline || '';
+  els.pname.textContent = name;
+  els.ppro.textContent  = pro;
+  els.ptag.textContent  = tag;
+  els.plate.classList.toggle('hidden', !settings.showPlate || (!name && !pro && !tag));
+
+  els.plate.dataset.pos        = settings.platePos   || 'bottom';
+  els.plate.dataset.panelStyle = settings.platePanel || 'frosted';
+  // underline only when enabled AND there's a name for it to sit under
+  els.plate.dataset.underline  = (settings.plateUnderline !== false && name) ? 'on' : 'off';
+
+  const st = els.plate.style;
+  st.setProperty('--plate-face',   PLATE_FONT[settings.plateFont] || PLATE_FONT.condensed);
+  st.setProperty('--plate-scale',  String((settings.plateSize ?? 100) / 100));
+  st.setProperty('--plate-color',  settings.plateColor  || '#f4f6fb');
+  st.setProperty('--plate-accent', settings.plateAccent || '#6fe3c4');
+  st.setProperty('--plate-case',   settings.plateCase === 'normal' ? 'none' : 'uppercase');
+
+  if (!settings.plateAutoHide) els.plate.classList.remove('dim');   // clear any lingering fade
+}
+
+// Fade the plate out while a touch reaction (or active petting) plays so it
+// never covers the face; called from the frame loop. No-op unless enabled.
+function updatePlate(){
+  if (!settings.plateAutoHide) return;
+  els.plate.classList.toggle('dim', !!(reactions.active || petting.active) && settings.showPlate);
+}
+
 function applySettings(){
-  els.pname.textContent = settings.name || '';
-  els.ppro.textContent  = settings.pronouns || '';
-  els.plate.classList.toggle('hidden', !settings.showPlate || (!settings.name && !settings.pronouns));
+  applyPlate();
   applyBackground();
   applyBgStyle();
   // reflect into controls
   els.inName.value=settings.name; els.inPro.value=settings.pronouns;
+  els.inTag.value = settings.tagline || '';
+  els.selPlatePos.value  = settings.platePos  || 'bottom';
+  els.selPlateFont.value = settings.plateFont || 'condensed';
+  els.plateSize.value = settings.plateSize ?? 100; els.plateSizeV.textContent = els.plateSize.value;
+  els.plateColor.value  = settings.plateColor  || '#f4f6fb';
+  els.plateAccent.value = settings.plateAccent || '#6fe3c4';
+  els.selPlatePanel.value = settings.platePanel || 'frosted';
+  els.selPlateCase.value  = settings.plateCase  || 'upper';
+  els.tgPlateLine.checked = settings.plateUnderline !== false;
+  els.tgPlateHide.checked = !!settings.plateAutoHide;
   els.tgPlate.checked=settings.showPlate; els.tgSaver.checked=settings.saver;
   els.bgA.value=settings.bgA; els.bgB.value=settings.bgB;
   els.tgBgAuto.checked = settings.bgAuto !== false;
@@ -142,6 +208,19 @@ els.rimInt.addEventListener('change', saveSettings);
 els.inName.addEventListener('input', e=>{ settings.name=e.target.value; applySettings(); saveSettings(); });
 els.inPro.addEventListener('input',  e=>{ settings.pronouns=e.target.value; applySettings(); saveSettings(); });
 els.tgPlate.addEventListener('change', e=>{ settings.showPlate=e.target.checked; applySettings(); saveSettings(); });
+els.inTag.addEventListener('input', e=>{ settings.tagline=e.target.value; applyPlate(); saveSettings(); });
+els.selPlatePos.addEventListener('change',  e=>{ settings.platePos=e.target.value;   applyPlate(); saveSettings(); });
+els.selPlateFont.addEventListener('change', e=>{ settings.plateFont=e.target.value;  applyPlate(); saveSettings(); });
+els.plateSize.addEventListener('input',  e=>{ settings.plateSize=+e.target.value; els.plateSizeV.textContent=e.target.value; applyPlate(); });
+els.plateSize.addEventListener('change', saveSettings);
+els.plateColor.addEventListener('input',   e=>{ settings.plateColor=e.target.value;  applyPlate(); });
+els.plateColor.addEventListener('change',  saveSettings);
+els.plateAccent.addEventListener('input',  e=>{ settings.plateAccent=e.target.value; applyPlate(); });
+els.plateAccent.addEventListener('change', saveSettings);
+els.selPlatePanel.addEventListener('change', e=>{ settings.platePanel=e.target.value; applyPlate(); saveSettings(); });
+els.selPlateCase.addEventListener('change',  e=>{ settings.plateCase=e.target.value;  applyPlate(); saveSettings(); });
+els.tgPlateLine.addEventListener('change', e=>{ settings.plateUnderline=e.target.checked; applyPlate(); saveSettings(); });
+els.tgPlateHide.addEventListener('change', e=>{ settings.plateAutoHide=e.target.checked; applyPlate(); saveSettings(); });
 els.tgSaver.addEventListener('change', e=>{ settings.saver=e.target.checked; S.acc=0; applySettings(); saveSettings(); });
 els.bgA.addEventListener('input', e=>{ settings.bgA=e.target.value; applyBackground(); saveSettings(); });
 els.bgB.addEventListener('input', e=>{ settings.bgB=e.target.value; applyBackground(); saveSettings(); });
@@ -746,4 +825,4 @@ hooks.setMode        = setMode;
 hooks.onAvatarLoaded = ()=>{ if (els.sheet.classList.contains('open')) renderMorphList(); };
 
 export { applySettings, applyCamLock, openSettings, closeSettings, setMode, renderMorphList,
-         els, acquireWake, syncFullscreenClass, motionNote, pickFile };
+         els, acquireWake, syncFullscreenClass, motionNote, pickFile, updatePlate };

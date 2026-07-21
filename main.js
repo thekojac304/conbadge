@@ -9,7 +9,7 @@ import { clampCameraTarget, applyView, updateParallax, renderScene } from './cam
 import { initLights, updateLights } from './light.js';
 import { updateZoneDebug, updateTrail } from './input.js';
 import { mountVRM } from './avatar.js';
-import { applySettings, applyCamLock, syncFullscreenClass, acquireWake, motionNote, els } from './ui.js';
+import { applySettings, applyCamLock, syncFullscreenClass, acquireWake, motionNote, updatePlate, els } from './ui.js';
 
 function loop(){
   requestAnimationFrame(loop);
@@ -48,6 +48,7 @@ function loop(){
   if (CONFIG.ZONE_DEBUG) updateZoneDebug();
   particles.update(dt);
   updateTrail(dt);
+  updatePlate();                                    // auto-hide the nameplate during reactions
   updateParallax(dt);
   updateLights(dt);
   renderScene();

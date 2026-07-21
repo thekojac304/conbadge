@@ -4,6 +4,22 @@ _Keep this short. Update it whenever the active thread of work changes —
 this is the first thing to read at the start of a new session._
 
 Active area:
+- **Customizable nameplate** (build `b78`, working tree, not yet confirmed
+  on-device). Expanded the bare name/pronouns plate into a fully styleable
+  badge. New **Nameplate style** card in the Badge tab: Position (top/middle/
+  bottom), Font (7 curated system stacks), Size (60–160%), Text + Accent
+  colours, Panel style (frosted/outline/none), Text case (UPPER/as-typed),
+  accent-underline toggle, and **Auto-hide** (fades the plate out during
+  reactions so it never covers the face). Also added an optional **Tagline**
+  third line. Surfaces: `index.html` (attr/var-driven CSS + the new card +
+  `#plate-tagline`), `ui.js` (`PLATE_FONTS`, `applyPlate()`, `updatePlate()`,
+  refs + listeners), `core.js` (10 new `settings` keys, all defaulting to the
+  prior look), `main.js` (`updatePlate()` in the loop). See
+  [ui.md § Nameplate style](ui.md). Verified: all four changed JS files parse
+  in module mode; browser runtime check confirmed every control drives the
+  right `data-*`/CSS-var/computed-style and persists to localStorage. Pixel
+  screenshot blocked by the WebGL rAF loop (known sandbox limit) — visual feel
+  is an on-device check.
 - **Lively backdrop** (build `b77`, working tree, not yet confirmed on-device).
   Replaced the inert static-gradient background with a CSS `#backdrop` layer
   that (1) offers **selectable styles**, (2) slides opposite the camera swing

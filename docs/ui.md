@@ -17,12 +17,47 @@ browser) and the touch-input layer in `input.js`.
 
 ### Settings sheet (`ui.js`, tabs)
 
-Nameplate name/pronouns + visibility toggle, background card (**Match
-lighting** toggle + 2 color pickers + 6 presets), Lighting card (see
+Nameplate identity (name / pronouns / tagline + visibility toggle) and a
+**Nameplate style** card (see below), background card (**Match lighting**
+toggle + 2 color pickers + 6 presets), Lighting card (see
 [lighting.md](lighting.md)), battery saver toggle, motion sensors +
 tilt-parallax toggles, keep-awake toggle, particle toggle, tail curl/lift
 sliders, camera height slider, camera lock, save-default-view, auto-return
 timeout, blendshape browser.
+
+### Nameplate style (`applyPlate()` / `updatePlate()`)
+
+All nameplate visuals are driven through **data-attributes + CSS custom
+properties on `#nameplate`** — the same var-driven pattern as the backdrop, so
+settings mirror straight into the DOM with no per-material work. `applyPlate()`
+in `ui.js` is the single writer; the CSS lives in `index.html`. Controls:
+
+- **Position** (`settings.platePos`: top / middle / bottom) → `data-pos`; the
+  CSS pins the plate and swaps the centring transform (middle uses
+  `translate(-50%,-50%)`).
+- **Font** (`settings.plateFont`) → `--plate-face`. Curated **system** stacks
+  only (`PLATE_FONTS` in `ui.js`: condensed / sans / rounded / serif / slab /
+  mono / impact) — no web-font fetch, so it renders offline; exact glyphs vary
+  by OS. Bundling real display fonts is a possible future step.
+- **Size** (`settings.plateSize`, 60–160%) → `--plate-scale`, a multiplier on
+  the existing responsive `clamp()` so name + pronouns + tagline scale together
+  and still adapt to screen width.
+- **Colors** — text (`plateColor`) → `--plate-color`, accent (`plateAccent`) →
+  `--plate-accent`. Deliberately **separate** from the global `--accent` (which
+  paints the whole settings UI) so recolouring the badge doesn't repaint chrome.
+- **Panel** (`settings.platePanel`: frosted / outline / none) → `data-panel-style`.
+- **Text case** (`settings.plateCase`: upper / normal) → `--plate-case`
+  (`uppercase` / `none`).
+- **Accent underline** (`settings.plateUnderline`) → `data-underline`; forced
+  off when the name is empty so an orphan bar never shows.
+- **Auto-hide** (`settings.plateAutoHide`) — `updatePlate()` (called from the
+  frame loop in `main.js`) toggles a `.dim` class that fades the plate out via
+  CSS opacity transition while `reactions.active || petting.active`, so the
+  plate never covers the face mid-reaction. No-op unless enabled.
+
+The **tagline** is an optional third line (con-useful: role / "ask about my
+art" / table #); `#plate-tagline:empty` hides it when blank. All keys default
+to the prior look, so existing users see no change until they tune.
 
 ### Backdrop style + colour (`applyBgStyle()` / `applyBackground()`)
 
