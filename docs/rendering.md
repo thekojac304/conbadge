@@ -61,6 +61,27 @@ renderer itself (`core.js`). Lighting/shading is a separate system — see
   render call and undone immediately after, so `OrbitControls` never sees
   the offset and doesn't treat it as user input drift.
 
+### Backdrop (CSS, behind the transparent canvas)
+
+The "background" is a pure-CSS layer, not part of the WebGL scene — `#stage`
+holds the gradient plus `#bg-orbs`, three soft blurred radial glows
+(`mix-blend-mode:screen`) that give the backdrop depth and life:
+
+- **Ambient drift** — each orb runs its own slow CSS keyframe
+  (`drift1/2/3`, 27–35s), so the backdrop is never static even with parallax
+  off. Only `transform`/`opacity` animate, so the expensive `blur()` rasters
+  once (compositor-only motion — safe on mobile GPUs). Disabled under
+  `prefers-reduced-motion`.
+- **Tilt-parallax slide** — `updateParallax()` writes `--px`/`--py` on `:root`
+  each frame from the same `parallax.yaw`/`pitch`, mapped to px by
+  `CONFIG.BG_PARALLAX_PX` and moving *opposite* the camera swing so the far
+  layer separates from the avatar (the actual depth cue). Writes are skipped
+  once the offset settles to ~0, so an idle badge does no per-frame DOM work.
+- **Colour** is driven entirely through CSS custom properties on `:root`
+  (`--bg-a/-b`, `--orb-a/-b/-c`), written by `applyBackground()` in `ui.js`.
+  See [ui.md](ui.md) and [lighting.md](lighting.md) for the "Match lighting"
+  source-of-truth split.
+
 ### Renderer
 
 `THREE.WebGLRenderer` with `alpha:true` (transparent canvas over the CSS

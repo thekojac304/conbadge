@@ -36,6 +36,9 @@ const BASE = {   // === original core.js baseline; "Flat (off)" ===
   key: { color:0xffffff, int:1.4, pos:[0.6,1.4,1.2] },
   rim: { color:0x8fb4ff, int:0.5, pos:[-0.8,1.0,-1.2] },
   mtoon:null,
+  // Backdrop palette when "Match lighting" is on: gradient stops + three orb
+  // glow colours (screen-blended, so they read as light). flat = original bg.
+  bg:{ a:'#141a2c', b:'#05060b', orbs:['#2a3a6a','#1c4a52','#3a2a55'] },
 };
 
 export const LOOKS = {
@@ -49,6 +52,7 @@ export const LOOKS = {
     mtoon:{ shadeTint:[0.52,0.57,0.78], toony:0.9, shift:-0.05,
             rimColor:0xcfe0ff, rimFresnel:3.5, rimLift:0.10, rimMix:0.85,
             outlineWidth:0.0010, outlineColor:0x17121f },
+    bg:{ a:'#1a2438', b:'#070b14', orbs:['#3350a0','#1f6a72','#4a3a80'] },
   },
 
   warm: {     // sunset: warm key, violet shadows, pink rim
@@ -59,6 +63,7 @@ export const LOOKS = {
     mtoon:{ shadeTint:[0.66,0.44,0.54], toony:0.85, shift:-0.04,
             rimColor:0xffc0d8, rimFresnel:3.2, rimLift:0.12, rimMix:0.82,
             outlineWidth:0.0011, outlineColor:0x201018 },
+    bg:{ a:'#2a1a2e', b:'#0e0710', orbs:['#c06a3a','#b03a6e','#5a2a80'] },
   },
 
   cool: {     // night: cool key, blue shadows, teal rim
@@ -69,6 +74,7 @@ export const LOOKS = {
     mtoon:{ shadeTint:[0.40,0.48,0.72], toony:0.92, shift:-0.05,
             rimColor:0x9ffff0, rimFresnel:3.6, rimLift:0.12, rimMix:0.88,
             outlineWidth:0.0010, outlineColor:0x0c1420 },
+    bg:{ a:'#101a34', b:'#040a16', orbs:['#2a5ac0','#1f8a8a','#2a3a90'] },
   },
 
   pop: {      // anime pop: punchy, hard cel break, bold rim + outline
@@ -79,6 +85,7 @@ export const LOOKS = {
     mtoon:{ shadeTint:[0.55,0.50,0.68], toony:1.0, shift:-0.02,
             rimColor:0xffffff, rimFresnel:2.5, rimLift:0.15, rimMix:0.9,
             outlineWidth:0.0016, outlineColor:0x120e18 },
+    bg:{ a:'#1e2440', b:'#08040e', orbs:['#4a6cff','#e0489c','#8a3ad0'] },
   },
 };
 
@@ -103,6 +110,10 @@ function currentLook(){
   return LOOKS[settings.look] || LOOKS[CONFIG.LIGHTING_DEFAULT] || LOOKS.studio;
 }
 function gain(v){ return Math.max(0, Math.min(2, v==null?1:v)); }
+
+// Backdrop palette for the active Look, used by ui.js when "Match lighting" is on.
+// Falls back to the flat baseline (original bg) when lighting is off.
+export function lookBackground(){ return currentLook().bg || LOOKS.flat.bg; }
 
 /* ===========================================================================
    Light rig

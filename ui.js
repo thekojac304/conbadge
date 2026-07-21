@@ -6,7 +6,7 @@ import { CONFIG } from './config.js';
 import { mountVRM } from './avatar.js';
 import { frameCamera, currentView, applyView, saveCamOffset, frameTarget } from './camera.js';
 import { gestures, reactions, GESTURE_LIST, tuner, tunerHold, tunerRelease } from './anim.js';
-import { LOOK_LIST, applyLightRig, applyLook } from './light.js';
+import { LOOK_LIST, applyLightRig, applyLook, lookBackground } from './light.js';
 
 
 
@@ -20,6 +20,7 @@ const els = {
   tgSaver:document.getElementById('tg-saver'),
   bgA:document.getElementById('bg-a'),
   bgB:document.getElementById('bg-b'),
+  tgBgAuto:document.getElementById('tg-bgauto'),
   tgLight:document.getElementById('tg-light'),
   selLook:document.getElementById('sel-look'),
   lightInt:document.getElementById('light-int'),
@@ -34,14 +35,38 @@ function applySettings(){
   els.pname.textContent = settings.name || '';
   els.ppro.textContent  = settings.pronouns || '';
   els.plate.classList.toggle('hidden', !settings.showPlate || (!settings.name && !settings.pronouns));
-  els.stage.style.background = `linear-gradient(180deg, ${settings.bgA}, ${settings.bgB})`;
-  document.querySelector('meta[name=theme-color]').setAttribute('content', settings.bgB);
+  applyBackground();
   // reflect into controls
   els.inName.value=settings.name; els.inPro.value=settings.pronouns;
   els.tgPlate.checked=settings.showPlate; els.tgSaver.checked=settings.saver;
   els.bgA.value=settings.bgA; els.bgB.value=settings.bgB;
+  els.tgBgAuto.checked = settings.bgAuto !== false;
   reflectLighting();
   resize();
+}
+
+/* ---- Backdrop palette -----------------------------------------------------
+   Everything (gradient + orb glows) is driven through CSS custom properties on
+   :root, so the manual pickers, the presets, and the Look-matched palette all
+   write the same knobs. "Match lighting" (bgAuto) pulls colours from the active
+   Look; off falls back to the manual bgA/bgB with the default orb tints. */
+const ROOT = document.documentElement;
+const DEFAULT_ORBS = ['#2a3a6a','#1c4a52','#3a2a55'];
+function applyBackground(){
+  const auto = settings.bgAuto !== false;
+  let a, b, orbs;
+  if (auto){ const bg = lookBackground(); a = bg.a; b = bg.b; orbs = bg.orbs; }
+  else     { a = settings.bgA; b = settings.bgB; orbs = DEFAULT_ORBS; }
+  ROOT.style.setProperty('--bg-a', a);
+  ROOT.style.setProperty('--bg-b', b);
+  ROOT.style.setProperty('--orb-a', orbs[0]);
+  ROOT.style.setProperty('--orb-b', orbs[1]);
+  ROOT.style.setProperty('--orb-c', orbs[2]);
+  document.querySelector('meta[name=theme-color]').setAttribute('content', b);
+  // Manual pickers/presets are meaningless while the backdrop follows the Look.
+  els.bgA.disabled = els.bgB.disabled = auto;
+  const presets = document.getElementById('bg-presets');
+  if (presets) presets.style.opacity = auto ? '.4' : '';
 }
 
 /* ---- Lighting Look, Brightness, Rim -------------------------------------- */
@@ -66,11 +91,13 @@ els.tgLight.addEventListener('change', e=>{
   reflectLighting();
   applyLightRig();                 // switch the rig on/off live
   if (S.vrm) applyLook(S.vrm);     // MToon treatment on when on, restored when off
+  applyBackground();               // bg tracks lighting on/off when auto
 });
 els.selLook.addEventListener('change', e=>{
   settings.look = e.target.value; saveSettings();
   applyLightRig();                 // relight live
   if (S.vrm) applyLook(S.vrm);     // re-treat materials live
+  applyBackground();               // re-tint backdrop to the new Look when auto
 });
 // Brightness + Rim only scale the light rig, so no material re-treat needed.
 els.lightInt.addEventListener('input', e=>{
@@ -86,8 +113,9 @@ els.inName.addEventListener('input', e=>{ settings.name=e.target.value; applySet
 els.inPro.addEventListener('input',  e=>{ settings.pronouns=e.target.value; applySettings(); saveSettings(); });
 els.tgPlate.addEventListener('change', e=>{ settings.showPlate=e.target.checked; applySettings(); saveSettings(); });
 els.tgSaver.addEventListener('change', e=>{ settings.saver=e.target.checked; S.acc=0; applySettings(); saveSettings(); });
-els.bgA.addEventListener('input', e=>{ settings.bgA=e.target.value; applySettings(); saveSettings(); });
-els.bgB.addEventListener('input', e=>{ settings.bgB=e.target.value; applySettings(); saveSettings(); });
+els.bgA.addEventListener('input', e=>{ settings.bgA=e.target.value; applyBackground(); saveSettings(); });
+els.bgB.addEventListener('input', e=>{ settings.bgB=e.target.value; applyBackground(); saveSettings(); });
+els.tgBgAuto.addEventListener('change', e=>{ settings.bgAuto=e.target.checked; applyBackground(); saveSettings(); });
 
 function openSettings(){ els.sheet.classList.add('open'); renderMorphList(); }
 function closeSettings(){ els.sheet.classList.remove('open'); }
@@ -130,7 +158,7 @@ const BG_PRESETS = [
   row.addEventListener('click', e=>{
     const b = e.target.closest('.preset'); if(!b) return;
     const [a,c] = BG_PRESETS[+b.dataset.i];
-    settings.bgA=a; settings.bgB=c; applySettings(); saveSettings();
+    settings.bgA=a; settings.bgB=c; applyBackground(); saveSettings();
   });
 })();
 

@@ -5,13 +5,17 @@ comment is the source of truth for exact removal/disable steps.
 
 ## Current implementation
 
-A **Look** bundles three things:
+A **Look** bundles four things:
 
 - a light rig (hemisphere + key directional + rim directional, with color/
   intensity/position),
 - a tone-mapping exposure (`none` or ACES Filmic),
 - an MToon parameter set (shadow tint, toony/shift terminator shaping,
-  parametric fresnel rim, outline width/color).
+  parametric fresnel rim, outline width/color),
+- a **backdrop palette** (`bg`: gradient stops + three orb glow colours). This
+  is consumed by the CSS backdrop, not the 3D scene — `lookBackground()`
+  exposes the active Look's `bg` and `ui.js`'s `applyBackground()` writes it to
+  `:root` when "Match lighting" is on. See [ui.md](ui.md) / [rendering.md](rendering.md).
 
 Four user-facing Looks: **Studio** (neutral warm key / cool rim, the
 default), **Warm** (sunset, violet shadows), **Cool** (night, teal rim),

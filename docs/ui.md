@@ -17,11 +17,27 @@ browser) and the touch-input layer in `input.js`.
 
 ### Settings sheet (`ui.js`, tabs)
 
-Nameplate name/pronouns + visibility toggle, background gradient (2 color
-pickers + 6 presets), Lighting card (see [lighting.md](lighting.md)),
-battery saver toggle, motion sensors + tilt-parallax toggles, keep-awake
-toggle, particle toggle, tail curl/lift sliders, camera height slider,
-camera lock, save-default-view, auto-return timeout, blendshape browser.
+Nameplate name/pronouns + visibility toggle, background card (**Match
+lighting** toggle + 2 color pickers + 6 presets), Lighting card (see
+[lighting.md](lighting.md)), battery saver toggle, motion sensors +
+tilt-parallax toggles, keep-awake toggle, particle toggle, tail curl/lift
+sliders, camera height slider, camera lock, save-default-view, auto-return
+timeout, blendshape browser.
+
+### Backdrop colour (`applyBackground()`)
+
+The gradient + orb glows (see [rendering.md](rendering.md) for the CSS layer)
+are all driven through CSS custom properties on `:root`, so the manual
+pickers, the 6 presets, and the Look-matched palette all write the *same*
+knobs (`--bg-a/-b`, `--orb-a/-b/-c`). `applyBackground()` is the single writer
+and picks the source:
+
+- **Match lighting on** (`settings.bgAuto`, default) — colours come from the
+  active Look's `bg` block (`lookBackground()` in `light.js`); switching Look
+  or toggling Lighting off re-tints the backdrop live. The manual pickers grey
+  out (like the Lighting sliders do when Lighting is off).
+- **Match lighting off** — manual `settings.bgA/bgB` gradient with the default
+  orb tints; the pickers/presets become active again.
 
 ### Blendshape browser
 

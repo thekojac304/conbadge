@@ -1,6 +1,6 @@
 // Con Badge — tuning constants and the touch-zone map.
 export const CONFIG = {
-  BUILD: 'b75',            // bump on each new version — shown in the load readout
+  BUILD: 'b76',            // bump on each new version — shown in the load readout
   LIGHTING: true,          // master switch for the light.js Look system (false = flat baseline)
   LIGHTING_DEFAULT: 'studio', // Look used when the user hasn't picked one (see LOOKS in light.js)
   FACE_FLIP: false,        // set true if your avatar loads facing away from you
@@ -58,6 +58,7 @@ export const CONFIG = {
   TILT_LEAN: 0.55,         // how much he counter-leans when the phone tilts (0 = off)
   PARALLAX_MAX: 0.20,      // radians of camera swing at full tilt (~11°); negate to invert
   PARALLAX_PITCH: 0.55,    // vertical parallax as a fraction of horizontal
+  BG_PARALLAX_PX: 34,      // px the backdrop orbs slide at full tilt (0 = static bg); opposes camera swing for depth
   KEEP_EXPRESSIONS: true,  // keep morphs used by badge expressions, prune the rest (mobile-safe)
   MORPH_CAP: 48,           // hard cap on kept morphs per mesh (safety for mobile GPUs)
   DPR_MAX: 2,              // pixel-ratio cap (perf); saver mode drops this

@@ -41,6 +41,10 @@
     --danger: #ff8b8b;
     --bg-a: #141a2c;        /* default gradient, overridable in settings */
     --bg-b: #05060b;
+    --orb-a: #2a3a6a;       /* backdrop glow colours (screen-blended) */
+    --orb-b: #1c4a52;
+    --orb-c: #3a2a55;
+    --px: 0px; --py: 0px;   /* tilt-parallax offset, driven per-frame in camera.js */
   }
   *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
   html,body{ margin:0; height:100%; overflow:hidden; background:#05060b; }
@@ -52,7 +56,28 @@
   }
 
   /* Scene fills the badge; the gradient sits behind the transparent canvas. */
-  #stage{ position:fixed; inset:0; background:linear-gradient(180deg,var(--bg-a),var(--bg-b)); }
+  #stage{ position:fixed; inset:0; overflow:hidden;
+          background:linear-gradient(180deg,var(--bg-a),var(--bg-b)); }
+  /* Backdrop orbs: soft, slowly drifting glows that also slide with tilt parallax
+     (the whole layer translates by --px/--py; each orb drifts on its own cycle).
+     Only transform/opacity animate, so the expensive blur rasters once. */
+  #bg-orbs{ position:absolute; inset:0; pointer-events:none;
+            transform:translate(var(--px),var(--py)); will-change:transform; }
+  #bg-orbs .orb{ position:absolute; border-radius:50%; filter:blur(60px);
+                 mix-blend-mode:screen; will-change:transform; }
+  .orb.o1{ width:72vw; height:72vw; left:-14vw; top:-10vh;
+           background:radial-gradient(circle, var(--orb-a) 0%, transparent 68%);
+           animation:drift1 27s ease-in-out infinite; }
+  .orb.o2{ width:62vw; height:62vw; right:-16vw; top:24vh;
+           background:radial-gradient(circle, var(--orb-b) 0%, transparent 68%);
+           animation:drift2 35s ease-in-out infinite; }
+  .orb.o3{ width:54vw; height:54vw; left:12vw; bottom:-16vh;
+           background:radial-gradient(circle, var(--orb-c) 0%, transparent 70%);
+           animation:drift3 31s ease-in-out infinite; }
+  @keyframes drift1{ 0%,100%{ transform:translate(0,0) } 50%{ transform:translate(4vw,3vh) } }
+  @keyframes drift2{ 0%,100%{ transform:translate(0,0) } 50%{ transform:translate(-3vw,4vh) } }
+  @keyframes drift3{ 0%,100%{ transform:translate(0,0) } 50%{ transform:translate(3vw,-3vh) } }
+  @media (prefers-reduced-motion: reduce){ .orb{ animation:none; } }
   #view{ position:fixed; inset:0; display:block; width:100%; height:100%; }
 
   /* ---- Badge frame overlay ---------------------------------------------- */
@@ -255,7 +280,7 @@
 </script>
 </head>
 <body>
-  <div id="stage"></div>
+  <div id="stage"><div id="bg-orbs" aria-hidden="true"><span class="orb o1"></span><span class="orb o2"></span><span class="orb o3"></span></div></div>
   <canvas id="view"></canvas>
 
   <!-- Badge frame -->
@@ -339,6 +364,10 @@
         </div>
 
         <div class="card">
+          <div class="inline">
+            <span>Match lighting<small>Backdrop follows the Look</small></span>
+            <label class="switch"><input type="checkbox" id="tg-bgauto" /><span class="track"></span><span class="knob"></span></label>
+          </div>
           <div class="inline">
             <span>Background</span>
             <div class="swatches">

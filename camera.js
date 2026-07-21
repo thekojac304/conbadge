@@ -157,6 +157,24 @@ const _pxPos = new THREE.Vector3(), _pxQuat = new THREE.Quaternion();
 const _pxOff = new THREE.Vector3(), _pxRight = new THREE.Vector3();
 const _upY = new THREE.Vector3(0,1,0);
 
+// Slide the backdrop orbs OPPOSITE the camera swing so the far layer separates
+// from the avatar — the depth cue that makes the tilt read as parallax, not sway.
+// Writes two CSS custom properties (compositor-only) and skips writes once idle.
+const _root = document.documentElement;
+let _bgWrote = false;
+function updateBackdrop(){
+  const amp = CONFIG.BG_PARALLAX_PX;
+  const bx = amp ? -parallax.yaw   / CONFIG.PARALLAX_MAX * amp : 0;
+  const by = amp ?  parallax.pitch / CONFIG.PARALLAX_MAX * amp : 0;
+  if (Math.abs(bx) < 0.05 && Math.abs(by) < 0.05){
+    if (_bgWrote){ _root.style.setProperty('--px','0px'); _root.style.setProperty('--py','0px'); _bgWrote = false; }
+    return;
+  }
+  _root.style.setProperty('--px', bx.toFixed(1)+'px');
+  _root.style.setProperty('--py', by.toFixed(1)+'px');
+  _bgWrote = true;
+}
+
 function updateParallax(dt){
   const on = motion.active && settings.parallax;
   const wantYaw   = on ? THREE.MathUtils.clamp((motion.gamma||0)/45, -1, 1) * CONFIG.PARALLAX_MAX : 0;
@@ -165,6 +183,7 @@ function updateParallax(dt){
   const k = 1 - Math.pow(0.03, dt);          // smooth; sensors are noisy
   parallax.yaw   += (wantYaw   - parallax.yaw  ) * k;
   parallax.pitch += (wantPitch - parallax.pitch) * k;
+  updateBackdrop();
 }
 
 function renderScene(){
