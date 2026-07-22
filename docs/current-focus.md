@@ -4,25 +4,27 @@ _Keep this short. Update it whenever the active thread of work changes —
 this is the first thing to read at the start of a new session._
 
 Active area:
-- **Tuner visual body-region picker** (build `b82`, working tree, not yet
-  confirmed on-device). The flat ~50-bone dropdown (30 of which are finger
-  joints) got clunky to search. Added a collapsible SVG stick-figure above the
-  bone select — clicking a region (head/torso, L/R arm, L/R hand, L/R leg,
-  ears, tail) narrows the SAME dropdown via a local `activeGroup`; it's pure
-  sugar with no state of its own, and every line is bracketed with
-  `REMOVABLE (picker)` comments for a clean strip-out if it doesn't land well
-  (full instructions in [ui.md § Visual body-region picker](ui.md)). Chosen
-  over 3D-tap-on-the-avatar specifically because a flat SVG/DOM panel — unlike
-  the WebGL canvas — can be screenshotted/iterated on directly in the sandbox.
-  Verified: `ui.js` parses; region-narrowing filter logic harness-tested
-  against a mock rig (correct bone sets per region, correct empty-region
-  greyout, correct click-to-toggle/switch semantics); live DOM check confirmed
-  the panel opens, all 9 regions render with non-zero layout, greyout applies
-  correctly when no avatar is loaded, and the picker defaults open. Pixel
-  screenshot of the panel itself timed out in this sandbox (WebGL rAF loop
-  issue per known limitation) despite being pure 2D DOM — visual polish (does
-  the figure look reasonable, are labels legible) is the remaining on-device
-  check, but structural/behavioral correctness is already confirmed two ways.
+- **Tuner visual body-region picker — v2, chips** (build `b83`, working tree,
+  not yet confirmed on-device). **v1 (SVG stick-figure, `b82`) was tried,
+  pushed, and rejected on-device** — user felt it didn't visually match the
+  rest of the app. Because it was built removable, the swap was clean: deleted
+  the whole `#tn-diagram` SVG/`<style>` block and replaced it with a plain row
+  of filter **chips** reusing the app's own `.chip`/`.is-on` classes (same ones
+  the test bar already uses) — All + 9 regions (head/torso, L/R arm, L/R hand,
+  L/R leg, ears, tail). Same underlying mechanism as v1: clicking a chip sets
+  `activeGroup`, narrowing the same dropdown via `buildBones()`; region chips
+  `disabled` when the loaded avatar has nothing there. Renamed
+  `updateDiagramState()`→`updateRegionState()` accordingly. No collapse toggle
+  this time (a compact button row didn't need one, unlike the diagram). See
+  [ui.md § Visual body-region picker](ui.md) for the updated removal
+  instructions. Verified: `ui.js` parses; toggle/All-clear semantics
+  harness-tested; live DOM check confirmed 10 chips render, "All" is
+  on by default, all 9 region chips correctly `disabled` with no avatar
+  loaded, no console errors. Pixel screenshot of the panel still times out in
+  this sandbox (WebGL rAF loop blocks capture regardless of 2D content, a
+  known limitation, confirmed unrelated to this specific change) — whether the
+  chips *look* right (spacing, wrap, matching the test bar visually) is the
+  on-device check this round.
 
 - **Keyframe clips — Path B, Phase 1** (build `b81`, working tree, not yet
   confirmed on-device). Greenlit the hybrid pose-to-pose system: sparse

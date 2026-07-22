@@ -117,39 +117,44 @@ specifics:
 
 #### Visual body-region picker (removable)
 
-A `<details>`-collapsible SVG stick-figure sits above the bone dropdown/filter,
-open by default. Clicking a region (head/torso, L/R arm, L/R hand, L/R leg,
-ears, tail) sets a local `activeGroup` that **narrows the same dropdown** to
-that region's bones — it holds no state of its own and duplicates none of the
-existing selection logic (`cur()`, `syncSliders()`, capture/playback all work
-identically regardless of whether the picker exists). Regions grey out
-(`.tn-empty`, pointer-events off) when the *loaded* avatar has nothing there
-(`regionHasBones()` checks `rig.bones`/`rig.ears`/`rig.tail`), since fingers/
-ears/tail vary per rig. Click the same region again (or "✕ show all") to clear
-`activeGroup` and see the full list.
+A row of filter chips (`#tn-regions`) sits above the bone dropdown/filter: All
++ 9 regions (head/torso, L/R arm, L/R hand, L/R leg, ears, tail). Clicking one
+sets a local `activeGroup` that **narrows the same dropdown** to that region's
+bones — it holds no state of its own and duplicates none of the existing
+selection logic (`cur()`, `syncSliders()`, capture/playback all work
+identically regardless of whether the chips exist). Chips reuse the app's own
+`.chip`/`.is-on` classes (the same ones the test bar uses), specifically so
+this reads as a native part of the UI rather than a one-off visual style — an
+**earlier SVG stick-figure version was tried and rejected** for not matching
+the rest of the app; chips replaced it directly. Region chips `disabled` when
+the *loaded* avatar has nothing there (`regionHasBones()` checks
+`rig.bones`/`rig.ears`/`rig.tail`), since fingers/ears/tail vary per rig; "All"
+is always enabled. Clicking the active chip again (or "All") clears
+`activeGroup` and restores the full list.
 
-- **Configure:** region shapes/positions are in the inline SVG in the `html`
-  string (search `tn-diagram`); colors/greyout in the adjacent `<style>` block.
-- **Disable:** collapse the `<details>` (click "Visual picker") — no code
-  change, just a UI preference. Not persisted, so it reopens on next page load
-  (defaults `open`); flip the `open` attribute in the markup to default it
-  collapsed instead.
+- **Configure:** chip labels/order are the `#tn-regions` buttons in the `html`
+  string; sizing override in the adjacent `<style>` (`#anim-tuner .chip{...}`).
+- **Disable:** no runtime toggle currently (unlike the earlier SVG version) —
+  since it's one compact row rather than a diagram, there wasn't a strong case
+  for a collapse control. Add a `<details>` wrapper back if that's wanted.
 - **Remove entirely:** every line is bracketed with `REMOVABLE (picker)`
-  comments — delete the `<details id="tn-picker">…</details>` markup block +
-  its adjacent `<style>`, the `let activeGroup` declaration, the one
-  `if (activeGroup …) continue;` line inside `buildBones()` plus the
-  `earExtras`/`tailExtras` split (revert to the single combined "Ears / tail"
-  `extras` array it replaced), the `regionHasBones()`/`updateDiagramState()`
-  functions, and the two `el('tn-diagram')?.../el('tn-region-clear')?...`
-  listeners. Nothing outside those marked spans references the picker.
+  comments — delete the `#tn-regions` block + its adjacent `<style>`, the
+  `let activeGroup` declaration, the one `if (activeGroup …) continue;` line
+  inside `buildBones()` plus the `earExtras`/`tailExtras` split (revert to the
+  single combined "Ears / tail" `extras` array it replaced), the
+  `regionHasBones()`/`updateRegionState()` functions, and the
+  `el('tn-regions')?...` click listener. Nothing outside those marked spans
+  references the picker.
 
 Added because the flat ~50-bone list (head/torso/arms/hands/**30 finger
 joints**/legs/ears/tail) got clunky to search even with the text filter.
-Chosen over 3D-tap-on-the-avatar because a 2D schematic sidesteps occlusion
-(far-arm elbow, tail, ears not all visible from one angle) and small-target
-precision on a phone (a finger tap on the real mesh at normal framing), and
-because a flat DOM/SVG panel — unlike the WebGL avatar canvas — can be
-screenshotted and iterated on directly in a sandboxed dev environment.
+A 2D region picker (over 3D-tap-on-the-avatar) sidesteps occlusion (far-arm
+elbow, tail, ears not all visible from one angle) and small-target precision
+on a phone; a flat DOM panel — unlike the WebGL avatar canvas — can also be
+inspected directly in a sandboxed dev environment (screenshotting the panel
+itself hit an unrelated sandbox limitation — the WebGL render loop blocks
+pixel capture regardless of what 2D content is on screen — so this was
+verified via live DOM/JS inspection instead).
 
 ### Touch input (`input.js`)
 
