@@ -4,7 +4,7 @@ import { THREE, S, rig, settings, scene, camera, renderer, controls, clock, resi
 import { CONFIG } from './config.js';
 import { pose, flushExpr } from './pose.js';
 import { idle, gestures, reactions, petting, particles, applyTailPose, applyEarPose,
-         decayImpulses, applyHipsDrop } from './anim.js';
+         decayImpulses, applyHipsDrop, clips } from './anim.js';
 import { clampCameraTarget, applyView, updateParallax, renderScene } from './camera.js';
 import { initLights, updateLights } from './light.js';
 import { updateZoneDebug, updateTrail } from './input.js';
@@ -37,6 +37,7 @@ function loop(){
     petting.update(dt);
     gestures.update(dt);
     if (reactions.active) reactions.update(dt);
+    clips.update(dt);             // keyframe clip playback, layered over idle
     pose.apply();                 // write humanoid offsets (pre-update)
     applyHipsDrop();              // bounce sink (position, not rotation)
     S.vrm.update(dt);               // humanoid → raw, springs

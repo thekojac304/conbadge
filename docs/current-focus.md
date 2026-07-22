@@ -4,6 +4,21 @@ _Keep this short. Update it whenever the active thread of work changes —
 this is the first thing to read at the start of a new session._
 
 Active area:
+- **Keyframe clips — Path B, Phase 1** (build `b81`, working tree, not yet
+  confirmed on-device). Greenlit the hybrid pose-to-pose system: sparse
+  keyframes + Catmull-Rom interpolation + idle underlay. Built the clip data
+  model, the interpolation player (`catmull`/`interpChannel`/`sampleClip`), a
+  `clips` layer in the frame loop (over idle, after reactions), and
+  capture-and-play authoring in the Tuner ("Keyframes (clip)" section) with
+  save/load to `localStorage['cb.clips']`. **No visual timeline yet** — that's
+  Phase 2. Interpolation math harness-verified (endpoints, exact keys, smooth
+  in-betweens, absent-channel=0, face clamp, end clamp); app boots clean. See
+  [animation.md § Keyframe clips](animation.md). **The open question Phase 1
+  exists to answer:** does sparse-key + spline + idle-underlay actually feel
+  smooth/alive on-device? That's the next check before investing in Phase 2's
+  timeline UI. Files: `anim.js` (clips engine + `nodeAddOffset` refactor),
+  `main.js` (`clips.update`), `ui.js` (Keyframes panel), `config.js` (stamp).
+
 - **Idle arm/elbow liveliness** (build `b79`, working tree, not yet confirmed
   on-device). User reported the idle arms read as stiff — the elbows had a flex
   sine but it was slow/small enough (~±0.13 at a ~15s period) to look static.

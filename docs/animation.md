@@ -91,6 +91,33 @@ be tuned. Selecting it sets `idle._hold` (freezes `idle.t`, so every pose sine
 (adjust the idle base offsets / `CONFIG` constants), not `value*e` like the
 gestures/reactions — the readout header flags this.
 
+### Keyframe clips — Path B, Phase 1 (`clips` in `anim.js`)
+
+The first slice of the opt-in keyframe system (see Design philosophy). A **clip**
+is `{ name, dur, loop, keys:[ {t, ov:{bone:[x,y,z,tw]}, face:{morph:w}} ] }` —
+each key is a snapshot of the Tuner's additive overrides + face weights at a
+time. Authored and played **over idle** (so breathing/blink/idle life run
+underneath for free), layered like a gesture.
+
+- **Interpolation:** every channel present in *any* key interpolates across all
+  keys (absent in a key counts as 0 there), **Catmull-Rom** through the keys so
+  a handful of poses *flows* rather than stopping at each one. `catmull()` /
+  `interpChannel()` / `sampleClip()`. Face results clamp to [0,1] (splines
+  overshoot); bones are left to overshoot on purpose (that's follow-through).
+- **Playback:** `clips.update(dt)` (in `main.js`'s loop, after reactions) samples
+  the clip into `clips.cur`, applies bones via `pose.add`/`pose.twist` and face
+  via `setExpr`; ears/tail are read from `clips.cur.ov` in `applyEar/TailPose`
+  (shared `nodeAddOffset()`, same path the Tuner uses).
+- **Authoring (Phase 1, no timeline yet):** Tuner panel "Keyframes (clip)"
+  section. Pose with the sliders, set `t`, **Capture** (snapshots non-zero
+  channels; same-time recapture replaces); repeat for 3–6 keys. **Play** releases
+  the Tuner hold and plays over idle; **Stop** re-holds. **Save/Load/Del** persist
+  the authoring keys to `localStorage['cb.clips']`.
+- **Not yet (later phases):** visual timeline/scrub/drag (Phase 2); procedural
+  secondary-motion enrichment, touch-zone binding, export/bake-to-source
+  (Phase 3). Clips currently only play from the Tuner; nothing fires them in
+  normal use yet.
+
 ## Design philosophy
 
 Animations stay **procedural (code)** by deliberate, standing decision — not

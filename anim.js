@@ -438,7 +438,8 @@ function applyEarPose(time){
     _te.set(flick + drift, 0, dir*(flick*0.55 + drift*0.4), 'XYZ');
     _tq.setFromEuler(_te);
     rig.ears[i].quaternion.copy(rig.earsRest[i]).multiply(_tq);
-    tunerAddTo(rig.ears[i], 'ear'+i);          // live tuner offset, if any
+    if (tuner.active)   nodeAddOffset(rig.ears[i], tuner.overrides['ear'+i]);   // live Tuner
+    if (clips.playing)  nodeAddOffset(rig.ears[i], clips.cur.ov['ear'+i]);      // clip playback
   }
 }
 
@@ -514,7 +515,8 @@ function applyTailPose(time){
 
     _te.set(ex, ey, ez, 'XYZ'); _tq.setFromEuler(_te);
     rig.tail[i].quaternion.copy(rig.tailRest[i]).multiply(_tq);
-    tunerAddTo(rig.tail[i], 'tail'+i);         // live tuner offset, if any
+    if (tuner.active)   nodeAddOffset(rig.tail[i], tuner.overrides['tail'+i]);   // live Tuner
+    if (clips.playing)  nodeAddOffset(rig.tail[i], clips.cur.ov['tail'+i]);      // clip playback
   }
 }
 
@@ -847,12 +849,11 @@ const reactions = {
    =========================================================================== */
 const tuner = { active:false, kind:null, name:null, overrides:{}, face:{} };
 const _tue = new THREE.Euler(), _tuq = new THREE.Quaternion();
-// Adds a tuner override onto a non-humanoid node (ears/tail) AFTER its
-// procedural pose is written, so the offset layers on instead of being lost.
-function tunerAddTo(node, key){
-  if (!tuner.active || !node) return;
-  const o = tuner.overrides[key];
-  if (!o) return;
+// Multiplies an Euler+twist offset onto a non-humanoid node (ears/tail) AFTER
+// its procedural pose is written, so the offset layers on instead of being
+// lost. Shared by the live Tuner and by clip playback.
+function nodeAddOffset(node, o){
+  if (!node || !o) return;
   if (o[0]||o[1]||o[2]){ _tue.set(o[0],o[1],o[2],'XYZ'); _tuq.setFromEuler(_tue); node.quaternion.multiply(_tuq); }
   if (o[3]){ _tue.set(o[3],0,0,'XYZ'); _tuq.setFromEuler(_tue); node.quaternion.multiply(_tuq); }
 }
@@ -896,6 +897,68 @@ function applyTuner(){
   for (const s in tuner.face){ if (tuner.face[s]) setExpr(s, tuner.face[s]); }
 }
 
+/* ===========================================================================
+   Clip playback (Phase 1 keyframe system). A clip is a small set of authored
+   keyframes — snapshots of the Tuner's additive overrides + face weights at a
+   time — that play back over idle. Channels present in ANY key interpolate
+   across all keys (absent in a key counts as 0 there), Catmull-Rom smoothed so
+   a handful of keys flows through the poses instead of stopping at each one.
+   Bones go through pose.add/twist; ears/tail are read from clips.cur in
+   applyEar/TailPose; face via setExpr. Authored/played over idle — see ui.js.
+   =========================================================================== */
+// Catmull-Rom through p1..p2 (p0,p3 are the neighbours), u in 0..1.
+function catmull(p0, p1, p2, p3, u){
+  const u2 = u*u, u3 = u2*u;
+  return 0.5*((2*p1) + (-p0+p2)*u + (2*p0-5*p1+4*p2-p3)*u2 + (-p0+3*p1-3*p2+p3)*u3);
+}
+// Interpolate one channel (array of per-key values) at time t across keys.
+function interpChannel(keys, vals, t){
+  const n = keys.length;
+  if (n === 1) return vals[0];
+  if (t <= keys[0].t)      return vals[0];
+  if (t >= keys[n-1].t)    return vals[n-1];
+  let i = 0; while (i < n-1 && keys[i+1].t <= t) i++;
+  const t0 = keys[i].t, t1 = keys[i+1].t;
+  const u = (t1 > t0) ? (t - t0)/(t1 - t0) : 0;
+  return catmull(vals[Math.max(0,i-1)], vals[i], vals[i+1], vals[Math.min(n-1,i+2)], u);
+}
+// Sample a clip at time t → { ov:{bone:[x,y,z,tw]}, face:{morph:w} }.
+function sampleClip(c, t){
+  const ov = {}, face = {}, keys = c.keys;
+  if (!keys.length) return { ov, face };
+  const bones = new Set(), morphs = new Set();
+  for (const k of keys){ for (const b in k.ov) bones.add(b); for (const m in k.face) morphs.add(m); }
+  for (const b of bones){
+    const per = keys.map(k => k.ov[b] || [0,0,0,0]);
+    ov[b] = [0,1,2,3].map(ch => interpChannel(keys, per.map(a => a[ch]||0), t));
+  }
+  for (const m of morphs){
+    const v = interpChannel(keys, keys.map(k => k.face[m]||0), t);
+    face[m] = Math.max(0, Math.min(1, v));       // morphs clamp; spline can overshoot
+  }
+  return { ov, face };
+}
+const clips = {
+  playing:null,               // the clip currently playing, or null
+  t:0,
+  editKeys:[],                // the clip being authored (array of keyframes)
+  cur:{ ov:{}, face:{} },     // this frame's interpolated snapshot (ears/tail read here)
+  play(clip){ this.playing = clip; this.t = 0; gestures.fadeOut(); },
+  stop(){ this.playing = null; this.cur = { ov:{}, face:{} }; },
+  update(dt){
+    if (!this.playing) return;
+    const c = this.playing; this.t += dt;
+    if (this.t >= c.dur){ if (c.loop) this.t %= c.dur; else { this.stop(); return; } }
+    const snap = sampleClip(c, this.t);
+    this.cur = snap;
+    for (const b in snap.ov){ const o = snap.ov[b];
+      if (o[0]||o[1]||o[2]) pose.add(b, o[0], o[1], o[2]);   // ear/tail keys no-op here
+      if (o[3]) pose.twist(b, o[3]);
+    }
+    for (const s in snap.face){ if (snap.face[s]) setExpr(s, snap.face[s]); }
+  }
+};
+
 // Applies the idle bounce's hip sink plus any gesture-requested lift. Rotations
 // come from the pose accumulator; this is the one place we touch a bone's
 // POSITION. Lives here rather than in pose.js because it reads gestureHips.
@@ -919,4 +982,4 @@ export function decayImpulses(dt){
 hooks.onShake = ()=> reactions.fire('dizzy');
 
 export { applyHipsDrop, idle, GESTURES, GESTURE_LIST, gestures, reactions, petting, particles,
-         applyTailPose, applyEarPose, tuner, tunerHold, tunerRelease };
+         applyTailPose, applyEarPose, tuner, tunerHold, tunerRelease, clips };
