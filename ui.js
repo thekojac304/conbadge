@@ -391,6 +391,40 @@ const BG_PRESETS = [
       `<optgroup label="Reactions">${optList(REACTIONS,'reaction')}</optgroup>`+
     `</select>`+
     '<label style="display:block;margin-bottom:2px;color:#9fb3d9">Bone / joint</label>'+
+    // ===== REMOVABLE: visual body-region picker =====================
+    // Pure sugar: clicking a region just narrows the SAME select below (via
+    // activeGroup in buildBones()) — it holds no state of its own. To rip this
+    // out: delete this <details> block, the #tn-diagram styles below, the
+    // activeGroup variable + its one `if` in buildBones(), and the wiring
+    // block marked "picker wiring" further down. Nothing else changes.
+    '<style>'+
+      '.tn-region{cursor:pointer} .tn-region rect,.tn-region circle,.tn-region ellipse,.tn-region line,.tn-region path'+
+        '{fill:#26365490;stroke:#4a6a9a;stroke-width:1.5;transition:fill .12s}'+
+      '.tn-region text{fill:#8fb0e0;font-size:7px;text-anchor:middle;pointer-events:none}'+
+      '.tn-region:hover rect,.tn-region:hover circle,.tn-region:hover ellipse,.tn-region:hover line,.tn-region:hover path{fill:#3a5a8a90}'+
+      '.tn-region.tn-active rect,.tn-region.tn-active circle,.tn-region.tn-active ellipse,.tn-region.tn-active line,.tn-region.tn-active path{fill:#4fa3ff80;stroke:#8fd0ff}'+
+      '.tn-region.tn-active text{fill:#cfe8ff}'+
+      '.tn-region.tn-empty{opacity:.28;pointer-events:none}'+
+    '</style>'+
+    '<details id="tn-picker" open style="margin-bottom:6px">'+
+      '<summary style="cursor:pointer;color:#9fb3d9;user-select:none">Visual picker</summary>'+
+      '<svg id="tn-diagram" viewBox="0 0 140 200" style="width:100%;height:auto;margin-top:6px;max-height:180px">'+
+        '<g class="tn-region" data-group="Ears"><ellipse cx="52" cy="13" rx="6" ry="9"/><ellipse cx="88" cy="13" rx="6" ry="9"/><text x="70" y="6">Ears</text></g>'+
+        '<g class="tn-region" data-group="Tail"><path d="M74,92 Q100,108 92,142" fill="none" stroke-width="6"/><text x="106" y="140">Tail</text></g>'+
+        '<g class="tn-region" data-group="Left arm"><line x1="55" y1="46" x2="26" y2="98" stroke-width="8" stroke-linecap="round"/><text x="24" y="70">L arm</text></g>'+
+        '<g class="tn-region" data-group="Right arm"><line x1="85" y1="46" x2="114" y2="98" stroke-width="8" stroke-linecap="round"/><text x="116" y="70">R arm</text></g>'+
+        '<g class="tn-region" data-group="Body / head"><circle cx="70" cy="22" r="14"/><rect x="55" y="38" width="30" height="52" rx="8"/><text x="70" y="66">Head/torso</text></g>'+
+        '<g class="tn-region" data-group="Left hand — fingers"><circle cx="24" cy="106" r="8"/><text x="24" y="124">L hand</text></g>'+
+        '<g class="tn-region" data-group="Right hand — fingers"><circle cx="116" cy="106" r="8"/><text x="116" y="124">R hand</text></g>'+
+        '<g class="tn-region" data-group="Left leg"><line x1="62" y1="90" x2="55" y2="158" stroke-width="9" stroke-linecap="round"/><circle cx="53" cy="171" r="7"/><text x="55" y="184">L leg</text></g>'+
+        '<g class="tn-region" data-group="Right leg"><line x1="78" y1="90" x2="85" y2="158" stroke-width="9" stroke-linecap="round"/><circle cx="87" cy="171" r="7"/><text x="85" y="184">R leg</text></g>'+
+      '</svg>'+
+      '<div style="display:flex;justify-content:space-between;margin-top:2px">'+
+        '<span id="tn-region-active" style="color:#8fd0ff"></span>'+
+        '<span id="tn-region-clear" style="color:#f88;cursor:pointer;display:none">✕ show all</span>'+
+      '</div>'+
+    '</details>'+
+    // ===== end removable block =====================================
     `<input type="text" id="tn-filter" placeholder="filter bones (e.g. finger, knee)…" style="margin-bottom:5px">`+
     `<select id="tn-bone" size="1" style="margin-bottom:8px"></select>`;
   for (const [ax,lbl] of CTRLS){
@@ -440,14 +474,18 @@ const BG_PRESETS = [
   const cur = () => el('tn-bone').value;
   const ov  = b => { let o = tuner.overrides[b]; if (!o){ o=[0,0,0,0]; tuner.overrides[b]=o; } return o; };
 
+  // REMOVABLE (picker): which diagram region is narrowing the list, if any.
+  let activeGroup = null;
+
   // Build the bone dropdown from the LOADED rig, grouped + filtered.
   function buildBones(){
     const sel = el('tn-bone');
     const names = Object.keys(rig.bones || {});
-    if (!names.length){ sel.innerHTML = '<option value="">— load an avatar first —</option>'; return; }
+    if (!names.length){ sel.innerHTML = '<option value="">— load an avatar first —</option>'; updateDiagramState(); return; }
     const f = (el('tn-filter').value || '').trim().toLowerCase();
     const groups = {};
     for (const n of names){
+      if (activeGroup && group(n) !== activeGroup) continue;    // REMOVABLE (picker)
       if (f && !n.toLowerCase().includes(f) && !label(n).toLowerCase().includes(f)) continue;
       (groups[group(n)] ||= []).push(n);
     }
@@ -460,15 +498,38 @@ const BG_PRESETS = [
     }
     // Ears/tail are non-humanoid nodes — expose them with synthetic keys
     // (ear0…, tail0…) that applyEarPose/applyTailPose pick up via tunerAddTo.
-    const extras = [];
-    for (let i=0;i<(rig.ears?.length||0);i++) extras.push(['ear'+i, 'Ear '+i]);
-    for (let i=0;i<(rig.tail?.length||0);i++) extras.push(['tail'+i, 'Tail '+(i+1)]);
-    const fe = extras.filter(([k,l]) => !f || k.includes(f) || l.toLowerCase().includes(f));
-    if (fe.length) h += `<optgroup label="Ears / tail">` +
-      fe.map(([k,l])=>`<option value="${k}">${l}</option>`).join('') + '</optgroup>';
+    // REMOVABLE (picker): activeGroup 'Ears'/'Tail' narrows to just one of these.
+    const earExtras = (!activeGroup || activeGroup==='Ears') ?
+      Array.from({length: rig.ears?.length||0}, (_,i)=>['ear'+i, 'Ear '+i]) : [];
+    const tailExtras = (!activeGroup || activeGroup==='Tail') ?
+      Array.from({length: rig.tail?.length||0}, (_,i)=>['tail'+i, 'Tail '+(i+1)]) : [];
+    const keep = ([k,l]) => !f || k.includes(f) || l.toLowerCase().includes(f);
+    const ee = earExtras.filter(keep), te = tailExtras.filter(keep);
+    if (ee.length) h += `<optgroup label="Ears">` + ee.map(([k,l])=>`<option value="${k}">${l}</option>`).join('') + '</optgroup>';
+    if (te.length) h += `<optgroup label="Tail">` + te.map(([k,l])=>`<option value="${k}">${l}</option>`).join('') + '</optgroup>';
     const prev = sel.value;
     sel.innerHTML = h || '<option value="">(no match)</option>';
     if (prev && [...sel.options].some(o=>o.value===prev)) sel.value = prev;
+    updateDiagramState();     // REMOVABLE (picker): sync region highlight/greyout
+  }
+
+  // REMOVABLE (picker): highlight the active region and grey out ones with
+  // nothing to select on THIS avatar (rig-dependent — fingers/ears/tail vary).
+  function regionHasBones(grp){
+    if (grp==='Ears') return (rig.ears?.length||0) > 0;
+    if (grp==='Tail') return (rig.tail?.length||0) > 0;
+    return Object.keys(rig.bones||{}).some(n=>group(n)===grp);
+  }
+  function updateDiagramState(){
+    const svg = el('tn-diagram'); if (!svg) return;
+    svg.querySelectorAll('[data-group]').forEach(g=>{
+      const grp = g.dataset.group;
+      g.classList.toggle('tn-empty', !regionHasBones(grp));
+      g.classList.toggle('tn-active', activeGroup===grp);
+    });
+    const lbl = el('tn-region-active'), clr = el('tn-region-clear');
+    if (lbl) lbl.textContent = activeGroup ? ('Showing: '+activeGroup) : '';
+    if (clr) clr.style.display = activeGroup ? 'inline' : 'none';
   }
 
   // Face / expression sliders, built from the avatar's animatable morphs.
@@ -531,6 +592,16 @@ const BG_PRESETS = [
   });
   el('tn-bone').addEventListener('change', syncSliders);
   el('tn-filter').addEventListener('input', ()=>{ buildBones(); syncSliders(); });
+
+  // ===== REMOVABLE (picker wiring): body-region diagram click handling =====
+  el('tn-diagram')?.addEventListener('click', ev=>{
+    const g = ev.target.closest('[data-group]'); if (!g) return;
+    const grp = g.dataset.group;
+    activeGroup = (activeGroup === grp) ? null : grp;   // click again to clear
+    buildBones(); syncSliders();
+  });
+  el('tn-region-clear')?.addEventListener('click', ()=>{ activeGroup = null; buildBones(); syncSliders(); });
+  // ===== end removable wiring =====
   el('tn-anim').addEventListener('change', ()=>{
     const [kind, ...rest] = el('tn-anim').value.split(':');
     tunerHold(kind, rest.join(':'));
