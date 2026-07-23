@@ -115,6 +115,35 @@ specifics:
   its duration (past the ease-in, sitting at full pose) with internal time
   paused.
 
+#### Keyframe timeline (Phase 2, `#kf-track`)
+
+The "Keyframes (clip)" section's visual editor for the `clips` player (see
+[animation.md § Keyframe clips](animation.md)). A horizontal track shows one
+diamond **marker** per keyframe positioned by its time (`left% = t/dur`), plus
+a pink **playhead** line and a duration label (`dur` = last key's time).
+
+- **Capture** snapshots the current Tuner pose at the `t` field, drops a marker,
+  and selects it (`t` auto-advances 0.5 for the next).
+- **Track pointer handling** (one `pointerdown` on `#kf-track`, `touch-action:
+  none` so a drag doesn't scroll the panel): pointerdown on a **marker** selects
+  it and drag retimes it (re-sorts live); pointerdown on **empty track** starts
+  a **scrub** — releases the Tuner hold and `clips.scrub()`s the edit clip at the
+  time under the finger, so dragging previews the interpolated motion frame by
+  frame. Selection is tracked **by object reference** (`selKey`), so it survives
+  the re-sort that dragging/capture triggers.
+- **Selected-key row** (shown only when a marker is selected): **Edit pose**
+  (`clips.stop()` → re-hold base → load the key's `ov`/`face` into
+  `tuner.overrides`/`tuner.face` so the sliders drive it) → adjust → **Update**
+  (snapshot current pose back into the key) → **Dup** (clone at the midpoint to
+  the next key) / **Del**.
+- **Play** toggles play/pause; a `requestAnimationFrame` loop (`tickTimeline`)
+  moves the playhead and syncs the button label while `clips.playing`. **Stop**
+  ends playback and re-holds the base for posing. Non-loop playback auto-pauses
+  at the end (playhead parked) rather than stopping outright.
+- **Removability:** deep-copied via `cloneKey()` on save/load/dup so no keyframe
+  ever shares a channel array (a shared array would corrupt keys when one is
+  edited — the specific bug the harness checks for).
+
 #### Visual body-region picker (removable)
 
 A row of filter chips (`#tn-regions`) sits above the bone dropdown/filter: All

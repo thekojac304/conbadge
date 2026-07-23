@@ -108,15 +108,25 @@ underneath for free), layered like a gesture.
   the clip into `clips.cur`, applies bones via `pose.add`/`pose.twist` and face
   via `setExpr`; ears/tail are read from `clips.cur.ov` in `applyEar/TailPose`
   (shared `nodeAddOffset()`, same path the Tuner uses).
-- **Authoring (Phase 1, no timeline yet):** Tuner panel "Keyframes (clip)"
-  section. Pose with the sliders, set `t`, **Capture** (snapshots non-zero
-  channels; same-time recapture replaces); repeat for 3–6 keys. **Play** releases
-  the Tuner hold and plays over idle; **Stop** re-holds. **Save/Load/Del** persist
-  the authoring keys to `localStorage['cb.clips']`.
-- **Not yet (later phases):** visual timeline/scrub/drag (Phase 2); procedural
-  secondary-motion enrichment, touch-zone binding, export/bake-to-source
-  (Phase 3). Clips currently only play from the Tuner; nothing fires them in
-  normal use yet.
+- **Authoring (Phase 2, visual timeline):** Tuner panel "Keyframes (clip)"
+  section — see [ui.md § Keyframe timeline](ui.md) for the interaction detail.
+  Pose with the sliders, set `t`, **Capture**; markers appear on a timeline
+  track. Tap a marker to **select** it, drag it to **retime**, or drag empty
+  track to **scrub-preview** any moment. Selected-key actions: **Edit pose**
+  (loads that key back into the sliders), **Update** (writes the current pose
+  back into the key), **Dup**, **Del**. **Play/Pause** with an animated
+  playhead; **Stop** returns to posing. **Save/Load/Del** persist to
+  `localStorage['cb.clips']`.
+- **Player states (`clips` in `anim.js`):** `play` (advance `t`), `scrub`/
+  `pause` (hold `t`, keep applying the sample — this is what the scrub/preview
+  path uses), `resume`, `stop`. Non-loop playback auto-pauses at `dur` (playhead
+  parks at the end) rather than tearing down, so the UI can reflect the state.
+  A `requestAnimationFrame` loop in `ui.js` moves the playhead + syncs the
+  Play/Pause label while `clips.playing`.
+- **Not yet (Phase 3):** procedural secondary-motion enrichment, touch-zone
+  binding / built-in override (the "bridge"), export/bake-to-source. Clips
+  still only play from the Tuner; nothing fires them in normal use yet, and a
+  saved clip lives only in that browser's `localStorage`.
 
 ## Design philosophy
 

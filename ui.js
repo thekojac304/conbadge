@@ -438,15 +438,32 @@ const BG_PRESETS = [
     '</div>'+
     '<textarea id="tn-out" readonly style="width:100%;height:130px;margin-top:8px;box-sizing:border-box;'+
     'background:#0b1018;color:#bfe0ff;border:1px solid #2b3a55;border-radius:6px;font:11px/1.3 monospace;padding:6px"></textarea>'+
-    // Keyframes (Phase 1 clip system). Pose with the sliders above, capture at a
-    // time, repeat; Play interpolates over idle. Save/Load persist to storage.
+    // Keyframes (Phase 2 clip system): visual timeline. Pose → Capture at a
+    // time; markers show keys, drag the track to scrub-preview, tap a marker to
+    // select/edit it. Play interpolates over idle. Save/Load persist to storage.
+    '<style>'+
+      '#kf-track{position:relative;height:38px;margin-top:8px;border:1px solid #2b3a55;'+
+        'border-radius:6px;background:#0b1018;touch-action:none;overflow:hidden}'+
+      '#kf-track .kf-axis{position:absolute;left:0;right:0;bottom:9px;border-top:1px solid #24314c}'+
+      '.kf-mk{position:absolute;bottom:4px;width:12px;height:12px;margin-left:-6px;'+
+        'background:#4fa3ff;border:1px solid #cfe8ff;border-radius:2px;transform:rotate(45deg);cursor:grab}'+
+      '.kf-mk.kf-sel{background:#ffd36f;border-color:#fff;box-shadow:0 0 0 2px #ffd36f66}'+
+      '#kf-playhead{position:absolute;top:0;bottom:0;width:2px;background:#ff6f9c;left:0;pointer-events:none}'+
+      '#kf-track .kf-t0{position:absolute;left:3px;top:2px;font:10px monospace;color:#5b6b86}'+
+      '#kf-track .kf-td{position:absolute;right:3px;top:2px;font:10px monospace;color:#5b6b86}'+
+    '</style>'+
     '<div style="margin-top:12px;color:#9fb3d9;border-top:1px solid #24314c;padding-top:8px">'+
-      '<b>Keyframes (clip)</b> <span style="color:#8090a8;font-weight:normal">— pose, then capture</span></div>'+
+      '<b>Keyframes (clip)</b> <span style="color:#8090a8;font-weight:normal">— pose, capture, scrub</span></div>'+
     '<div style="display:flex;gap:6px;margin-top:6px;align-items:center">'+
       '<span>t</span><input type="number" id="kf-time" value="0" step="0.1" style="width:56px">'+
-      btn('kf-cap','＋ Capture keyframe','flex:1;')+
+      btn('kf-cap','＋ Capture','flex:1;')+
     '</div>'+
-    '<div id="kf-list" style="margin-top:6px;font:11px/1.5 monospace;max-height:110px;overflow:auto"></div>'+
+    '<div id="kf-track"><div class="kf-axis"></div><div class="kf-markers"></div>'+
+      '<div id="kf-playhead"></div><span class="kf-t0">0.0</span><span class="kf-td">—</span></div>'+
+    '<div id="kf-sel-row" style="display:none;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap">'+
+      '<span id="kf-sel-t" style="color:#ffd36f;font:11px monospace"></span>'+
+      btn('kf-edit','Edit pose')+ btn('kf-update','Update')+ btn('kf-dup','Dup')+ btn('kf-seldel','Del')+
+    '</div>'+
     '<div style="display:flex;gap:6px;margin-top:6px;align-items:center">'+
       '<label style="flex:1"><input type="checkbox" id="kf-loop"> loop</label>'+
       btn('kf-play','▶ Play','flex:1;')+ btn('kf-stop','■ Stop')+
@@ -615,10 +632,13 @@ const BG_PRESETS = [
     toast('Deltas copied', 1400);
   });
 
-  /* ---- Keyframes / clips ---- */
+  /* ---- Keyframes / clips (Phase 2: visual timeline) ---- */
   const CLIP_KEY = 'cb.clips';
   const loadLib = () => { try { return JSON.parse(localStorage.getItem(CLIP_KEY)) || {}; } catch(e){ return {}; } };
   const saveLib = obj => { try { localStorage.setItem(CLIP_KEY, JSON.stringify(obj)); } catch(e){} };
+  let selKey = null;          // selected keyframe (by reference, survives re-sort)
+  let drag = null;            // active pointer drag on the track
+  let rafId = 0;             // playhead animation loop id
 
   // Snapshot the current Tuner pose (non-zero channels only) as one keyframe body.
   function snapshot(){
@@ -627,11 +647,30 @@ const BG_PRESETS = [
     for (const m in tuner.face){ if (tuner.face[m]) face[m] = tuner.face[m]; }
     return { ov, face };
   }
-  function renderKeys(){
-    el('kf-list').innerHTML = clips.editKeys.map((k,i)=>{
-      const n = Object.keys(k.ov).length + Object.keys(k.face).length;
-      return `<div>t=${k.t.toFixed(2)} · ${n} ch <span data-kf="${i}" style="color:#f88;cursor:pointer">✕</span></div>`;
-    }).join('') || '<div style="color:#8090a8">no keyframes yet — pose above, set t, Capture</div>';
+  const cloneKey = k => ({ t:k.t,
+    ov: Object.fromEntries(Object.entries(k.ov||{}).map(([b,v])=>[b, v.slice(0,4)])),
+    face: { ...(k.face||{}) } });
+  const clipDur = () => { const k = clips.editKeys; return Math.max(0.1, k.length ? k[k.length-1].t : 1); };
+  const buildEditClip = () => ({ name: el('kf-name').value || 'clip', dur: clipDur(), loop: el('kf-loop').checked, keys: clips.editKeys });
+  function timeFromX(cx){
+    const r = el('kf-track').getBoundingClientRect();
+    return +(Math.max(0, Math.min(1, (cx - r.left)/r.width)) * clipDur()).toFixed(3);
+  }
+  function positionPlayhead(){
+    const ph = el('kf-playhead'); if (!ph) return;
+    ph.style.left = (((clips.playing ? clips.t : 0)/clipDur())*100) + '%';
+  }
+  function updatePlayBtn(){ el('kf-play').textContent = (clips.playing && !clips.paused) ? '⏸ Pause' : '▶ Play'; }
+  function renderTrack(){
+    const mk = el('kf-track').querySelector('.kf-markers');
+    const dur = clipDur();
+    mk.innerHTML = clips.editKeys.map((k,i)=>
+      `<div class="kf-mk${k===selKey?' kf-sel':''}" data-i="${i}" style="left:${(k.t/dur)*100}%"></div>`).join('');
+    el('kf-track').querySelector('.kf-td').textContent = dur.toFixed(1);
+    positionPlayhead();
+    const row = el('kf-sel-row');
+    if (selKey){ row.style.display='flex'; el('kf-sel-t').textContent = 'key t='+selKey.t.toFixed(2); }
+    else row.style.display='none';
   }
   function buildLib(){
     const lib = loadLib();
@@ -639,42 +678,100 @@ const BG_PRESETS = [
       || '<option value="">(no saved clips)</option>';
   }
   function holdCurrent(){ const [kind, ...rest] = el('tn-anim').value.split(':'); tunerHold(kind, rest.join(':')); refresh(); }
+  function tickTimeline(){
+    if (clips.playing){ positionPlayhead(); updatePlayBtn(); rafId = requestAnimationFrame(tickTimeline); }
+    else { rafId = 0; updatePlayBtn(); }
+  }
+  const startTimeline = () => { if (!rafId) rafId = requestAnimationFrame(tickTimeline); };
 
   el('kf-cap').addEventListener('click', ()=>{
     const t = parseFloat(el('kf-time').value) || 0;
     clips.editKeys = clips.editKeys.filter(k => Math.abs(k.t - t) > 1e-4);  // replace same-time key
-    clips.editKeys.push({ t, ...snapshot() });
-    clips.editKeys.sort((a,b)=>a.t-b.t);
+    const key = { t, ...snapshot() };
+    clips.editKeys.push(key); clips.editKeys.sort((a,b)=>a.t-b.t);
+    selKey = key;
     el('kf-time').value = (t + 0.5).toFixed(1);   // auto-advance for the next one
-    renderKeys();
+    renderTrack();
     toast('Keyframe @ '+t.toFixed(2)+'s', 1200);
   });
-  el('kf-list').addEventListener('click', ev=>{
-    const s = ev.target.closest('[data-kf]'); if (!s) return;
-    clips.editKeys.splice(+s.dataset.kf, 1); renderKeys();
+
+  // Track pointer: tap/drag a marker to select/retime it; drag empty track to scrub.
+  el('kf-track').addEventListener('pointerdown', ev=>{
+    const mkEl = ev.target.closest('.kf-mk');
+    if (mkEl){
+      selKey = clips.editKeys[+mkEl.dataset.i]; renderTrack();
+      drag = { mode:'marker' };
+    } else {
+      if (!clips.editKeys.length) return;
+      tunerRelease();
+      clips.scrub(buildEditClip(), timeFromX(ev.clientX));
+      positionPlayhead(); updatePlayBtn();
+      drag = { mode:'scrub' };
+    }
+    el('kf-track').setPointerCapture?.(ev.pointerId);
   });
+  el('kf-track').addEventListener('pointermove', ev=>{
+    if (!drag) return;
+    if (drag.mode === 'scrub'){ clips.seek(timeFromX(ev.clientX)); positionPlayhead(); }
+    else if (selKey){ selKey.t = timeFromX(ev.clientX); clips.editKeys.sort((a,b)=>a.t-b.t); renderTrack(); }
+  });
+  el('kf-track').addEventListener('pointerup', ()=>{
+    if (drag && drag.mode === 'marker' && selKey) el('kf-time').value = selKey.t.toFixed(2);
+    drag = null;
+  });
+
+  el('kf-edit').addEventListener('click', ()=>{
+    if (!selKey) return;
+    clips.stop(); holdCurrent();                 // back to posing over the base
+    tuner.overrides = {}; tuner.face = {};        // load the selected key's pose in
+    for (const b in selKey.ov) tuner.overrides[b] = selKey.ov[b].slice(0,4);
+    for (const m in selKey.face) tuner.face[m] = selKey.face[m];
+    el('kf-time').value = selKey.t.toFixed(2);
+    buildBones(); buildFace(); refresh(); updatePlayBtn();
+    toast('Editing key t='+selKey.t.toFixed(2)+' — adjust, then Update', 2200);
+  });
+  el('kf-update').addEventListener('click', ()=>{
+    if (!selKey){ toast('Select a keyframe first', 1500); return; }
+    const s = snapshot(); selKey.ov = s.ov; selKey.face = s.face;
+    renderTrack(); toast('Updated key t='+selKey.t.toFixed(2), 1400);
+  });
+  el('kf-dup').addEventListener('click', ()=>{
+    if (!selKey) return;
+    const i = clips.editKeys.indexOf(selKey), next = clips.editKeys[i+1];
+    const nt = +( next ? (selKey.t + next.t)/2 : selKey.t + 0.5 ).toFixed(3);
+    const dup = cloneKey(selKey); dup.t = nt;
+    clips.editKeys.push(dup); clips.editKeys.sort((a,b)=>a.t-b.t);
+    selKey = dup; renderTrack();
+  });
+  el('kf-seldel').addEventListener('click', ()=>{
+    if (!selKey) return;
+    clips.editKeys = clips.editKeys.filter(k => k !== selKey); selKey = null; renderTrack();
+  });
+
   el('kf-play').addEventListener('click', ()=>{
-    if (clips.editKeys.length < 1){ toast('No keyframes to play', 1500); return; }
-    const dur = Math.max(0.1, clips.editKeys[clips.editKeys.length-1].t);
-    tunerRelease();                    // stop holding so idle runs and the clip plays over it
-    clips.play({ name: el('kf-name').value || 'clip', dur, loop: el('kf-loop').checked, keys: clips.editKeys });
+    if (!clips.editKeys.length){ toast('No keyframes to play', 1500); return; }
+    if (clips.playing && !clips.paused){ clips.pause(); }              // ⏸
+    else if (clips.playing && clips.paused){ clips.playing = buildEditClip(); clips.resume(); }  // resume from scrub point
+    else { tunerRelease(); selKey = null; renderTrack(); clips.play(buildEditClip()); }
+    startTimeline(); updatePlayBtn();
   });
-  el('kf-stop').addEventListener('click', ()=>{ clips.stop(); holdCurrent(); });
+  el('kf-stop').addEventListener('click', ()=>{ clips.stop(); holdCurrent(); positionPlayhead(); updatePlayBtn(); });
+
   el('kf-save').addEventListener('click', ()=>{
     const name = (el('kf-name').value || '').trim();
     if (!name){ toast('Name the clip first', 1500); return; }
     if (!clips.editKeys.length){ toast('No keyframes to save', 1500); return; }
     const lib = loadLib();
-    lib[name] = { keys: clips.editKeys, loop: el('kf-loop').checked };
+    lib[name] = { keys: clips.editKeys.map(cloneKey), loop: el('kf-loop').checked };
     saveLib(lib); buildLib(); el('kf-lib').value = name;
     toast('Saved "'+name+'"', 1500);
   });
   el('kf-load').addEventListener('click', ()=>{
     const name = el('kf-lib').value; if (!name) return;
     const lib = loadLib(); const c = lib[name]; if (!c) return;
-    clips.editKeys = (c.keys||[]).map(k=>({ t:k.t, ov:{...k.ov}, face:{...k.face} }));
+    clips.editKeys = (c.keys||[]).map(cloneKey);
     el('kf-name').value = name; el('kf-loop').checked = !!c.loop;
-    renderKeys(); toast('Loaded "'+name+'"', 1500);
+    selKey = null; renderTrack(); toast('Loaded "'+name+'"', 1500);
   });
   el('kf-del').addEventListener('click', ()=>{
     const name = el('kf-lib').value; if (!name) return;
@@ -690,12 +787,14 @@ const BG_PRESETS = [
       buildBones();
       buildFace();
       buildLib();
-      renderKeys();
+      renderTrack();
+      updatePlayBtn();
       const [kind, ...rest] = el('tn-anim').value.split(':');
       tunerHold(kind, rest.join(':'));
       refresh();
     } else {
       clips.stop();
+      if (rafId){ cancelAnimationFrame(rafId); rafId = 0; }
       tunerRelease();
     }
   }

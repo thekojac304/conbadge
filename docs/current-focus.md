@@ -4,8 +4,28 @@ _Keep this short. Update it whenever the active thread of work changes —
 this is the first thing to read at the start of a new session._
 
 Active area:
-- **Tuner visual body-region picker — v2, chips** (build `b83`, working tree,
-  not yet confirmed on-device). **v1 (SVG stick-figure, `b82`) was tried,
+- **Keyframe clips — Path B, Phase 2 (visual timeline)** (build `b84`, working
+  tree, not yet confirmed on-device). Built the timeline editor on top of the
+  Phase 1 clip engine: a `#kf-track` strip with per-key markers + a playhead;
+  scrub (drag empty track → preview any moment), marker drag to retime, tap a
+  marker to select, and edit-in-place (**Edit pose** loads a key back into the
+  sliders → **Update** writes it back; plus **Dup**/**Del**), Play/Pause with an
+  animated playhead. Also included the one non-optional add: **edit-in-place**
+  (without it, fixing a key meant re-posing from scratch). Extended the `clips`
+  player with `scrub`/`pause`/`resume` (hold `t`, keep applying) and auto-pause
+  at non-loop end. Deliberately deferred: per-segment easing (Catmull-Rom
+  already smooth), onion-skin. Files: `anim.js` (clip player states), `ui.js`
+  (timeline UI, replaced the Phase 1 text list), `config.js` (stamp). Verified:
+  all parse; harness covers time↔position mapping, deep-clone independence
+  (guards the shared-array keyframe-corruption bug), and the full
+  play/pause/scrub/end state machine; live DOM check drove capture→marker→select
+  end-to-end (3 keys → markers at 0/50/100%, selecting shows the row + highlight),
+  no console errors. Pixel screenshot still blocked by the WebGL rAF loop (known
+  sandbox limit) — **whether the track/markers/playhead read clearly and dragging
+  feels right on a phone is the on-device check.** The **Phase 1** capture-and-play
+  (previous entry) is now superseded by this.
+- **Tuner visual body-region picker — v2, chips** (build `b83`, confirmed
+  approach; superseded the SVG v1). **v1 (SVG stick-figure, `b82`) was tried,
   pushed, and rejected on-device** — user felt it didn't visually match the
   rest of the app. Because it was built removable, the swap was clean: deleted
   the whole `#tn-diagram` SVG/`<style>` block and replaced it with a plain row

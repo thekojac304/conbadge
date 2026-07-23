@@ -939,16 +939,25 @@ function sampleClip(c, t){
   return { ov, face };
 }
 const clips = {
-  playing:null,               // the clip currently playing, or null
+  playing:null,               // the clip currently playing/previewing, or null
   t:0,
+  paused:false,               // Phase 2 scrub: hold t, keep applying the sample
   editKeys:[],                // the clip being authored (array of keyframes)
   cur:{ ov:{}, face:{} },     // this frame's interpolated snapshot (ears/tail read here)
-  play(clip){ this.playing = clip; this.t = 0; gestures.fadeOut(); },
-  stop(){ this.playing = null; this.cur = { ov:{}, face:{} }; },
+  play(clip){ this.playing = clip; this.t = 0; this.paused = false; gestures.fadeOut(); },
+  // Freeze on a clip at a specific time — the timeline scrub/preview path.
+  scrub(clip, t){ this.playing = clip; this.t = t; this.paused = true; gestures.fadeOut(); },
+  seek(t){ this.t = t; },
+  pause(){ this.paused = true; },
+  resume(){ this.paused = false; },
+  stop(){ this.playing = null; this.paused = false; this.cur = { ov:{}, face:{} }; },
   update(dt){
     if (!this.playing) return;
-    const c = this.playing; this.t += dt;
-    if (this.t >= c.dur){ if (c.loop) this.t %= c.dur; else { this.stop(); return; } }
+    const c = this.playing;
+    if (!this.paused){
+      this.t += dt;
+      if (this.t >= c.dur){ if (c.loop) this.t %= c.dur; else { this.t = c.dur; this.paused = true; } }
+    }
     const snap = sampleClip(c, this.t);
     this.cur = snap;
     for (const b in snap.ov){ const o = snap.ov[b];
