@@ -117,10 +117,20 @@ specifics:
 
 #### Keyframe timeline (Phase 2, `#kf-track`)
 
-The "Keyframes (clip)" section's visual editor for the `clips` player (see
-[animation.md § Keyframe clips](animation.md)). A horizontal track shows one
-diamond **marker** per keyframe positioned by its time (`left% = t/dur`), plus
-a pink **playhead** line and a duration label (`dur` = last key's time).
+The visual editor for the `clips` player (see
+[animation.md § Keyframe clips](animation.md)). It lives in a **separate
+bottom-docked bar (`#kf-bar`)**, NOT in the scrolling slider panel — so you can
+pose (sliders, right panel) and capture/scrub/play (always-visible bar) without
+scrolling between them, which was the whole point. The bar is a sibling fixed
+element created next to `#anim-tuner`; **every keyframe element keeps the same
+id**, so the handlers are container-agnostic and were unchanged by the move.
+Opening the Tuner shows the bar and hides the app's test-bar chips to free the
+bottom edge; closing restores the test bar. The slider panel's `bottom` is
+capped (`calc(158px + safe-area)`) so the two fixed overlays never overlap (the
+bar is `max-height:132px` at `bottom:max(10px, safe-area)`). A horizontal track
+shows one diamond **marker** per keyframe positioned by its time (`left% =
+t/dur`), plus a pink **playhead** line and a duration label (`dur` = last key's
+time).
 
 - **Capture** snapshots the current Tuner pose at the `t` field, drops a marker,
   and selects it (`t` auto-advances 0.5 for the next).

@@ -4,6 +4,20 @@ _Keep this short. Update it whenever the active thread of work changes —
 this is the first thing to read at the start of a new session._
 
 Active area:
+- **Timeline moved to a bottom-docked bar** (build `b85`, working tree, not yet
+  confirmed on-device). User's Phase 2 feedback: timeline was smooth but being
+  in the same scrolling panel as the sliders forced a tedious pose→scroll-down→
+  capture→scroll-up loop. Chose (via ask) the bottom-docked-bar option. Moved
+  the whole keyframe section out of `#anim-tuner` into a separate fixed
+  `#kf-bar` across the bottom (above where the test bar was); the panel's
+  `bottom` is capped so the two don't overlap, and the test-bar chips hide while
+  the Tuner is open (restored on close). **Low-risk move**: all element ids
+  unchanged, so every handler worked untouched — verified live that `#kf-track`
+  now lives in `#kf-bar` not the panel, capture/markers still work, show/hide +
+  test-bar swap behave, and there's an 18px gap (no overlap) between panel
+  bottom and bar top. Sizing (`132px` bar / `158px` panel reserve) is a
+  first-pass guess — **whether the bar height/spacing feels right and the
+  controls wrap sanely on a phone is the on-device check.**
 - **Keyframe clips — Path B, Phase 2 (visual timeline)** (build `b84`, working
   tree, not yet confirmed on-device). Built the timeline editor on top of the
   Phase 1 clip engine: a `#kf-track` strip with per-key markers + a playhead;

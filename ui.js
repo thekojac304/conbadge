@@ -367,8 +367,10 @@ const BG_PRESETS = [
   const panel = document.createElement('div');
   panel.id = 'anim-tuner';
   panel.style.cssText =
-    'position:fixed;right:8px;top:8px;width:268px;max-height:94vh;overflow:auto;'+
-    'z-index:9999;background:rgba(12,16,24,.94);color:#e8eefc;border:1px solid #2b3a55;'+
+    // bottom leaves room for the docked #kf-bar (max 132px + its 10px offset +
+    // gap + safe-area) so the slider panel and the timeline bar never overlap.
+    'position:fixed;right:8px;top:8px;width:268px;bottom:calc(158px + env(safe-area-inset-bottom));'+
+    'overflow:auto;z-index:9999;background:rgba(12,16,24,.94);color:#e8eefc;border:1px solid #2b3a55;'+
     'border-radius:10px;padding:10px 12px;font:12px/1.35 system-ui,sans-serif;'+
     'box-shadow:0 6px 24px rgba(0,0,0,.5);display:none;';
 
@@ -437,45 +439,57 @@ const BG_PRESETS = [
       btn('tn-copy','Copy deltas','flex:1;')+ btn('tn-reset','Reset all')+
     '</div>'+
     '<textarea id="tn-out" readonly style="width:100%;height:130px;margin-top:8px;box-sizing:border-box;'+
-    'background:#0b1018;color:#bfe0ff;border:1px solid #2b3a55;border-radius:6px;font:11px/1.3 monospace;padding:6px"></textarea>'+
-    // Keyframes (Phase 2 clip system): visual timeline. Pose → Capture at a
-    // time; markers show keys, drag the track to scrub-preview, tap a marker to
-    // select/edit it. Play interpolates over idle. Save/Load persist to storage.
+    'background:#0b1018;color:#bfe0ff;border:1px solid #2b3a55;border-radius:6px;font:11px/1.3 monospace;padding:6px"></textarea>';
+  panel.innerHTML = html;
+  document.body.appendChild(panel);
+
+  // Keyframe/timeline controls live in a SEPARATE bottom-docked bar (#kf-bar),
+  // not in the scrolling slider panel — so you can pose (sliders, right panel)
+  // and capture/scrub/play (always-visible bar) without scrolling between them.
+  // Element IDs are unchanged, so every handler below works regardless of which
+  // container holds them. The bar is shown/hidden with the Tuner (and hides the
+  // test bar while open to free the bottom edge).
+  const kfBar = document.createElement('div');
+  kfBar.id = 'kf-bar';
+  kfBar.style.cssText =
+    'position:fixed;left:8px;right:8px;bottom:max(10px,env(safe-area-inset-bottom));z-index:9998;'+
+    'max-height:132px;overflow:auto;background:rgba(12,16,24,.95);color:#e8eefc;'+
+    'border:1px solid #2b3a55;border-radius:10px;padding:8px 10px;'+
+    'font:12px/1.35 system-ui,sans-serif;box-shadow:0 6px 24px rgba(0,0,0,.5);display:none;';
+  kfBar.innerHTML =
     '<style>'+
+      '#kf-bar select,#kf-bar input[type=text],#kf-bar input[type=number]{background:#1c2740;'+
+        'color:#e8eefc;border:1px solid #2b3a55;border-radius:6px;padding:5px}'+
+      '#kf-bar .chipbtn{padding:6px 9px;border-radius:6px;border:1px solid #2b3a55;'+
+        'background:#1c2740;color:#e8eefc;cursor:pointer}'+
       '#kf-track{position:relative;height:38px;margin-top:8px;border:1px solid #2b3a55;'+
         'border-radius:6px;background:#0b1018;touch-action:none;overflow:hidden}'+
       '#kf-track .kf-axis{position:absolute;left:0;right:0;bottom:9px;border-top:1px solid #24314c}'+
-      '.kf-mk{position:absolute;bottom:4px;width:12px;height:12px;margin-left:-6px;'+
+      '.kf-mk{position:absolute;bottom:4px;width:14px;height:14px;margin-left:-7px;'+
         'background:#4fa3ff;border:1px solid #cfe8ff;border-radius:2px;transform:rotate(45deg);cursor:grab}'+
       '.kf-mk.kf-sel{background:#ffd36f;border-color:#fff;box-shadow:0 0 0 2px #ffd36f66}'+
       '#kf-playhead{position:absolute;top:0;bottom:0;width:2px;background:#ff6f9c;left:0;pointer-events:none}'+
       '#kf-track .kf-t0{position:absolute;left:3px;top:2px;font:10px monospace;color:#5b6b86}'+
       '#kf-track .kf-td{position:absolute;right:3px;top:2px;font:10px monospace;color:#5b6b86}'+
     '</style>'+
-    '<div style="margin-top:12px;color:#9fb3d9;border-top:1px solid #24314c;padding-top:8px">'+
-      '<b>Keyframes (clip)</b> <span style="color:#8090a8;font-weight:normal">— pose, capture, scrub</span></div>'+
-    '<div style="display:flex;gap:6px;margin-top:6px;align-items:center">'+
-      '<span>t</span><input type="number" id="kf-time" value="0" step="0.1" style="width:56px">'+
-      btn('kf-cap','＋ Capture','flex:1;')+
+    '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">'+
+      '<b style="color:#9fb3d9">Clip</b>'+
+      '<span>t</span><input type="number" id="kf-time" value="0" step="0.1" style="width:52px">'+
+      btn('kf-cap','＋ Capture')+
+      '<label style="white-space:nowrap"><input type="checkbox" id="kf-loop"> loop</label>'+
+      btn('kf-play','▶ Play')+ btn('kf-stop','■ Stop')+
+      '<span style="flex:1;min-width:8px"></span>'+
+      '<input type="text" id="kf-name" placeholder="clip name" style="width:108px">'+ btn('kf-save','Save')+
+      '<select id="kf-lib" style="max-width:130px"></select>'+ btn('kf-load','Load')+ btn('kf-del','Del')+
     '</div>'+
     '<div id="kf-track"><div class="kf-axis"></div><div class="kf-markers"></div>'+
       '<div id="kf-playhead"></div><span class="kf-t0">0.0</span><span class="kf-td">—</span></div>'+
     '<div id="kf-sel-row" style="display:none;gap:6px;margin-top:6px;align-items:center;flex-wrap:wrap">'+
       '<span id="kf-sel-t" style="color:#ffd36f;font:11px monospace"></span>'+
       btn('kf-edit','Edit pose')+ btn('kf-update','Update')+ btn('kf-dup','Dup')+ btn('kf-seldel','Del')+
-    '</div>'+
-    '<div style="display:flex;gap:6px;margin-top:6px;align-items:center">'+
-      '<label style="flex:1"><input type="checkbox" id="kf-loop"> loop</label>'+
-      btn('kf-play','▶ Play','flex:1;')+ btn('kf-stop','■ Stop')+
-    '</div>'+
-    '<div style="display:flex;gap:6px;margin-top:6px">'+
-      '<input type="text" id="kf-name" placeholder="clip name" style="flex:1">'+ btn('kf-save','Save')+
-    '</div>'+
-    '<div style="display:flex;gap:6px;margin-top:6px">'+
-      '<select id="kf-lib" style="flex:1"></select>'+ btn('kf-load','Load')+ btn('kf-del','Del')+
     '</div>';
-  panel.innerHTML = html;
-  document.body.appendChild(panel);
+  document.body.appendChild(kfBar);
+  const testBarEl = document.getElementById('test-bar');
 
   const el = id => document.getElementById(id);
   const cur = () => el('tn-bone').value;
@@ -789,12 +803,16 @@ const BG_PRESETS = [
       buildLib();
       renderTrack();
       updatePlayBtn();
+      kfBar.style.display = 'block';
+      if (testBarEl) testBarEl.style.display = 'none';   // free the bottom edge for the clip bar
       const [kind, ...rest] = el('tn-anim').value.split(':');
       tunerHold(kind, rest.join(':'));
       refresh();
     } else {
       clips.stop();
       if (rafId){ cancelAnimationFrame(rafId); rafId = 0; }
+      kfBar.style.display = 'none';
+      if (testBarEl) testBarEl.style.display = '';        // restore the test bar
       tunerRelease();
     }
   }
