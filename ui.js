@@ -381,6 +381,11 @@ const BG_PRESETS = [
         'border:1px solid #2b3a55;border-radius:6px;padding:5px;width:100%;box-sizing:border-box}'+
       '#anim-tuner option{background:#12192a;color:#e8eefc}'+
       '#anim-tuner optgroup{background:#0b1018;color:#8fb0e0;font-style:normal}'+
+      // Fade the whole Tuner UI while dragging a slider / scrubbing / playing,
+      // so the avatar is visible behind it. Pointer-events stay on so you can
+      // still release the control or hit Stop.
+      '#anim-tuner,#kf-bar{transition:opacity .16s ease}'+
+      '#anim-tuner.tn-dim,#kf-bar.tn-dim{opacity:.16}'+
     '</style>'+
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'+
       '<b>Animation Tuner</b>'+
@@ -653,6 +658,9 @@ const BG_PRESETS = [
   let selKey = null;          // selected keyframe (by reference, survives re-sort)
   let drag = null;            // active pointer drag on the track
   let rafId = 0;             // playhead animation loop id
+  // Fade the UI so the avatar shows through while adjusting/scrubbing/playing.
+  let dimDrag = false, dimPlay = false;
+  const applyDim = () => { const on = dimDrag || dimPlay; panel.classList.toggle('tn-dim', on); kfBar.classList.toggle('tn-dim', on); };
 
   // Snapshot the current Tuner pose (non-zero channels only) as one keyframe body.
   function snapshot(){
@@ -693,10 +701,18 @@ const BG_PRESETS = [
   }
   function holdCurrent(){ const [kind, ...rest] = el('tn-anim').value.split(':'); tunerHold(kind, rest.join(':')); refresh(); }
   function tickTimeline(){
-    if (clips.playing){ positionPlayhead(); updatePlayBtn(); rafId = requestAnimationFrame(tickTimeline); }
-    else { rafId = 0; updatePlayBtn(); }
+    if (clips.playing && !clips.paused){
+      positionPlayhead(); updatePlayBtn(); dimPlay = true; applyDim();
+      rafId = requestAnimationFrame(tickTimeline);
+    } else { rafId = 0; updatePlayBtn(); dimPlay = false; applyDim(); }
   }
   const startTimeline = () => { if (!rafId) rafId = requestAnimationFrame(tickTimeline); };
+
+  // Dim while dragging a bone/face slider (delegated) — release anywhere clears.
+  panel.addEventListener('pointerdown', ev=>{
+    if (ev.target && ev.target.matches && ev.target.matches('input[type=range]')){ dimDrag = true; applyDim(); }
+  });
+  window.addEventListener('pointerup', ()=>{ if (dimDrag){ dimDrag = false; applyDim(); } });
 
   el('kf-cap').addEventListener('click', ()=>{
     const t = parseFloat(el('kf-time').value) || 0;
@@ -720,6 +736,7 @@ const BG_PRESETS = [
       tunerRelease();
       clips.scrub(buildEditClip(), timeFromX(ev.clientX));
       positionPlayhead(); updatePlayBtn();
+      dimDrag = true; applyDim();               // fade UI so the scrub preview is visible
       drag = { mode:'scrub' };
     }
     el('kf-track').setPointerCapture?.(ev.pointerId);
@@ -769,7 +786,7 @@ const BG_PRESETS = [
     else { tunerRelease(); selKey = null; renderTrack(); clips.play(buildEditClip()); }
     startTimeline(); updatePlayBtn();
   });
-  el('kf-stop').addEventListener('click', ()=>{ clips.stop(); holdCurrent(); positionPlayhead(); updatePlayBtn(); });
+  el('kf-stop').addEventListener('click', ()=>{ clips.stop(); holdCurrent(); positionPlayhead(); updatePlayBtn(); dimPlay = false; applyDim(); });
 
   el('kf-save').addEventListener('click', ()=>{
     const name = (el('kf-name').value || '').trim();
@@ -811,6 +828,7 @@ const BG_PRESETS = [
     } else {
       clips.stop();
       if (rafId){ cancelAnimationFrame(rafId); rafId = 0; }
+      dimDrag = dimPlay = false; applyDim();               // never reopen faded
       kfBar.style.display = 'none';
       if (testBarEl) testBarEl.style.display = '';        // restore the test bar
       tunerRelease();

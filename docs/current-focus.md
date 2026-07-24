@@ -4,8 +4,23 @@ _Keep this short. Update it whenever the active thread of work changes —
 this is the first thing to read at the start of a new session._
 
 Active area:
-- **Timeline moved to a bottom-docked bar** (build `b85`, working tree, not yet
-  confirmed on-device). User's Phase 2 feedback: timeline was smooth but being
+- **Tuner auto-fade while adjusting** (build `b86`, working tree, not yet
+  confirmed on-device). User feedback after the bottom-bar move: the panel
+  covers the avatar, so on mobile you tune half-blind. Added `.tn-dim` — the
+  whole Tuner UI (panel + `#kf-bar`) fades to `opacity:.16` while dragging a
+  slider, scrubbing, or playing a clip, snapping back on release/pause
+  (pointer-events stay on). Two OR'd flags: `dimDrag` (slider/scrub pointerdown
+  → window pointerup) and `dimPlay` (playhead rAF tick). Verified live that
+  slider-drag and scrub toggle both `.tn-dim` classes on/off correctly; the
+  **play-dim runs in the rAF tick which is stalled in this sandbox** (same root
+  cause as the WebGL screenshot timeouts — confirmed rAF doesn't fire between
+  calls here), so its logic is by-inspection + the shared `applyDim` mechanism
+  is proven, but the play-fade itself is an on-device check. No console errors.
+- **Timeline moved to a bottom-docked bar** (build `b85`, confirmed on-device —
+  user: "seems to work quite well," bar wraps cleanly into 3 rows on a Samsung
+  phone screenshot. Note: **Samsung Internet browser misbehaves** (user reports
+  it's not working properly there but fine in Chrome; user deemed it not worth
+  chasing — likely a Samsung Internet quirk, parked). User's Phase 2 feedback: timeline was smooth but being
   in the same scrolling panel as the sliders forced a tedious pose→scroll-down→
   capture→scroll-up loop. Chose (via ask) the bottom-docked-bar option. Moved
   the whole keyframe section out of `#anim-tuner` into a separate fixed

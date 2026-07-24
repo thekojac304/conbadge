@@ -114,6 +114,13 @@ specifics:
 - Selecting a new animation calls `tunerHold()`, which freezes it at 50% of
   its duration (past the ease-in, sitting at full pose) with internal time
   paused.
+- **Auto-fade while adjusting** (`.tn-dim`): the whole Tuner UI (panel + the
+  `#kf-bar`) fades to `opacity:.16` while a slider is being dragged, while
+  scrubbing the timeline, or while a clip plays — so the avatar is visible
+  through it during by-eye tuning — and snaps back on release/pause. Driven by
+  two flags OR'd together (`dimDrag` from slider/scrub pointerdown cleared on a
+  window `pointerup`; `dimPlay` set/cleared in the playhead rAF tick).
+  Pointer-events stay on so the control can still be released and Stop hit.
 
 #### Keyframe timeline (Phase 2, `#kf-track`)
 
