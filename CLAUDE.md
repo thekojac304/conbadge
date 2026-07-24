@@ -11,34 +11,25 @@ Everything runs client-side; the avatar never leaves the device.
 Primary avatar: **KOJAC**, a red/white/blue fox-husky. VRM 0.x, ~409 morph
 targets, 3 meshes, tail 6 bones, ears 4 bones, 0 spring bones.
 
-## Documentation (`/docs`)
+## Documentation — start here every session
 
-`/docs` is persistent memory **between Claude Code sessions** — each new
-session starts cold, so `/docs` (not scrollback) is the source of truth for
-subsystem design, decisions, and limitations. Read it at the start of a
-session before diving in; start with
-[docs/current-focus.md](docs/current-focus.md) for what's active right now.
+`/docs` is persistent memory **between Claude Code sessions**; each session
+starts cold, so `/docs` (not scrollback) is the source of truth. Recommended
+startup sequence:
 
-| File | Covers |
-|---|---|
-| [docs/architecture.md](docs/architecture.md) | Module structure, dependency flow, `S`/`hooks`/`rig` |
-| [docs/animation.md](docs/animation.md) | Pose pipeline, idle/gestures/reactions, Tuner, Path A/B |
-| [docs/rendering.md](docs/rendering.md) | VRM load, mesh repair, morph pruning, camera framing/IK |
-| [docs/lighting.md](docs/lighting.md) | The "Look" lighting/shading system |
-| [docs/ui.md](docs/ui.md) | Settings sheet, modes, test bar, Tuner UI, touch input |
-| [docs/performance.md](docs/performance.md) | Mobile GPU limits, morph capping, battery saver |
-| [docs/workflow.md](docs/workflow.md) | Upload loop, build stamp, verification steps |
-| [docs/current-focus.md](docs/current-focus.md) | **Session handoff** — what's active right now |
+1. Read this file (`CLAUDE.md`).
+2. Read [docs/index.md](docs/index.md) — the file map and what each doc covers.
+3. Read [docs/current-focus.md](docs/current-focus.md) — what's active right now.
+4. Read **only** the subsystem doc(s) relevant to the current task (see the
+   table in `docs/index.md`). Don't read the whole folder by default.
 
-**Keeping it current is part of the normal workflow, not a separate task.**
-Whenever a change touches architecture, a subsystem's behavior, or
-introduces a standing decision (a tuning convention, a deliberate tradeoff,
-a "why we didn't do X"), update the relevant `docs/*.md` file(s) in the
-*same* handover as the code change — don't let docs drift out of sync with
-what's actually shipped. Always update
-[docs/current-focus.md](docs/current-focus.md) as work moves between areas,
-even on turns that don't touch other docs. A doc update doesn't need its own
-round-trip: fold it into the same message as the code change.
+**Documentation is part of a feature's definition of done.** When a change
+meaningfully touches architecture, behavior, workflow, or a subsystem,
+update the relevant docs in the same handover as the code — see
+[docs/workflow.md § Documentation maintenance](docs/workflow.md) for the
+exact rule: what triggers an update, what doesn't (formatting, refactors,
+renames, numeric tuning, minor fixes), and how `current-focus.md` should be
+pruned as work resolves rather than left to accumulate.
 
 ## Workflow
 
@@ -96,125 +87,33 @@ shuffle, shake, tail-swish) are not, and are the case Path B eventually serves.
 
 ### Verification before handing over files
 
-- **Module-mode parse**: copy each changed file to `.mjs` and `node --check`.
-  Plain `node --check file.js` parses as a *script* and misses ESM-only errors.
-- **Runtime harness**: stub THREE + DOM, import `main.js`, execute several
-  frames, call every gesture. Catches undefined references static analysis
-  can't.
-- **Cross-module leak check**: strip comments/strings, confirm no module uses
-  an identifier owned by another module without importing it.
-- **Confirm the bumped stamp is actually in the emitted file** before handing
-  it over.
-
-Keep verification proportionate — the structure is stable, so parse + harness
-is usually enough. Don't echo large file sections back into the chat.
+See [docs/workflow.md § Verification before handing over files](docs/workflow.md)
+for the full checklist (module-mode parse, runtime harness, cross-module
+leak check). Keep it proportionate to the change size; always confirm the
+bumped `CONFIG.BUILD` stamp is actually in the emitted file before handing
+off. Don't echo large file sections back into the chat.
 
 ## Architecture
 
-three.js `0.169.0` and `@pixiv/three-vrm` `3.4.0` load from a CDN via an
-import map in `index.html`.
-
-| File | Role |
-|---|---|
-| `config.js` | All tuning constants + `TOUCH_ZONES` |
-| `core.js` | Renderer/scene/camera, `rig`, `S`, `settings`, storage, sensors, `hooks` |
-| `light.js` | Lighting/shading "Look" system: light rig, tone mapping, MToon treatment |
-| `pose.js` | `PoseAccumulator`, expression driver, arm IK, `anchorWorld` |
-| `camera.js` | Framing, saved views, pan clamp, parallax, `renderScene`, `skeletonBox` |
-| `anim.js` | Idle, gestures, tail/ears, particles, petting, reactions, `applyHipsDrop` |
-| `avatar.js` | VRM load, mesh repair, morph pruning, rig measurement |
-| `input.js` | Taps, petting drags, swipe trail, long-press, play-mode escape |
-| `ui.js` | Settings sheet, modes, test bar, blendshape browser |
-| `main.js` | Frame loop + boot |
-
-**Dependencies flow one way, no cycles:** `config` → `core` → `light`/`pose` →
-`camera` → `anim` → `avatar`/`input` → `ui` → `main`. `light` imports only
-`config` + `core` (like `pose`); `avatar`, `ui` and `main` import into it.
-
-Three deliberate structural choices, each breaking a would-be cycle:
-- **`S` object in `core.js`** holds cross-module mutable state (`vrm`,
-  `hipsDrop`, `frameScale`, `lastInteract`, …). ES modules can't reassign an
-  imported binding, so anything that changes lives on `S`.
-- **`hooks` object in `core.js`** lets low-level code call up: `onAvatarLoaded`,
-  `openSettings`, `closeSettings`, `setMode`, `onShake`.
-- **`skeletonBox` lives in `camera.js`**, not `avatar.js`, so `camera` never
-  has to import `avatar`.
+Plain ES modules, dependency flow one-way, no cycles:
+`config → core → light/pose → camera → anim → avatar/input → ui → main`.
+See [docs/architecture.md](docs/architecture.md) for the full module table
+and the `S`/`hooks`/`rig` shared-state pattern that keeps it acyclic.
 
 ## Conventions that matter
 
-**Bone rotation signs.** Normalised VRM bones are world-aligned. Raising an
-arm *subtracts* on the left and *adds* on the right
-(`m = side==='left' ? -1 : 1`). Getting this backwards swings the limb through
-the body.
+Quick-reference only — see the linked doc for the full rationale on each:
 
-**`armBase(side, w)`** neutralises the idle resting arm pose so a gesture can
-use *absolute* angles. Without it, gestures inherit `ARM_FORWARD` and
-`ELBOW_BEND` on Y, which combine with a Z elbow fold into a twisted composite
-rotation.
+- Bone rotation signs, `armBase`, `pose.twist`, `armReach`, and the VRM
+  bind-pose invariant → [docs/animation.md § Important decisions](docs/animation.md)
+- Proportional offsets and loose-mesh handling → [docs/rendering.md](docs/rendering.md)
+- Mobile GPU morph-target limits → [docs/performance.md](docs/performance.md)
+- Renderer sizing → [docs/rendering.md § Renderer](docs/rendering.md)
 
-**`pose.twist(bone, x)`** is a separate axial-roll channel applied *after* the
-euler offset, in the bone's own frame. Summing an X roll into the XYZ euler
-does not twist the limb — it swings it out of plane. Weight twists ~30/70
-toward the wrist; twisting a forearm at its root pinches the mesh.
+## Lighting / shading
 
-**`armReach(side, target, w)`** is two-bone IK using measured bone lengths.
-Prefer it over hand-tuned angles for anything that must touch the body —
-hardcoded angles only fit one set of proportions. The IK places the **wrist**,
-so subtract a paw-length holdoff.
-
-**Proportional offsets.** Touch zones and gesture targets are expressed as
-fractions of `rig.touchScale` (hips→head span) and projected along
-`rig.forward` / lateral axes. Absolute metre offsets land badly across avatars
-of different scale.
-
-**Mobile GPU limits.** Meshes with hundreds of morph targets silently fail to
-render on mobile GPUs. `setupMorphs()` must keep only name-matched morphs
-(capped) and prune the rest.
-
-**Renderer sizing.** Always use `renderer.setSize(w,h)` (not `false` as the
-third arg) plus CSS `#view{width:100%;height:100%}`.
-
-**VRM bind pose.** VRMs bind in T-pose; the idle animation must apply an
-always-on resting pose.
-
-**Spring bones.** This VRM has none — tail/ear motion is procedural, with a
-phase lag per joint so motion travels down the chain as a wave.
-
-**Loose meshes.** Some VRM conversions leave rigid props unskinned and
-unparented; `attachLooseMeshes()` re-parents them to the nearest bone. This
-only fixes rigid props — a deforming garment needs re-weighting in the export.
-
-## Lighting / shading "Look" system (`light.js`)
-
-Self-contained and removable. Owns the scene lights, renderer tone mapping, and a
-per-material MToon treatment. A **Look** (Studio/Warm/Cool/Anime Pop) bundles a
-light rig, exposure, and MToon params (cool shadow tint, toony terminator,
-parametric fresnel rim, outline); the internal `flat` Look = the original
-baseline, used only when lighting is switched off. MToon avatars get the full
-treatment; MeshStandard avatars are carried by the rig + tone mapping alone. The
-load readout prints `look <name> · MToon n/Std n`.
-
-**User controls** live in Settings → Appearance: a master **Lighting** on/off
-switch (`settings.lightOn`), the **Look** style selector (`settings.look`), and
-**Brightness** (`settings.lightIntensity`) + **Rim light** (`settings.rimIntensity`)
-sliders. Brightness scales the whole rig; Rim adds a multiplier on the rim light
-alone. The two sliders only re-run `applyLightRig()` (cheap); the toggle and Look
-also re-run `applyLook()` to re-treat materials. When the switch is off the style
-selector and sliders grey out.
-
-- **Configure:** edit the `LOOKS` presets in `light.js`; defaults via
-  `CONFIG.LIGHTING_DEFAULT`. Slider ranges are in `index.html` (Brightness 40–180%,
-  Rim 0–200%); code clamps gains to [0, 2].
-- **Disable:** flip the Lighting switch off, or set `CONFIG.LIGHTING=false` to
-  hard-disable. Both fall back to `flat`, which restores captured original material
-  values — a true no-op.
-- **Remove:** delete `light.js`; drop its imports/calls in `main.js`, `avatar.js`,
-  `ui.js`; remove the Lighting card (`tg-light` / `sel-look` / `light-int` /
-  `rim-int`) in `index.html`; paste the three baseline lights (see `BASE` in
-  `light.js`) back into `core.js`.
-
-Outlines are only tuned when the avatar already ships one (`outlineWidthMode>0`);
-the system never force-enables the outline pass (unreliable at runtime).
+See [docs/lighting.md](docs/lighting.md) for the "Look" system (`light.js`)
+— configuration, disable/removal steps, and design rationale.
 
 ## Debugging aids in place
 
@@ -231,7 +130,7 @@ the system never force-enables the outline pass (unreliable at runtime).
 
 ## Cost management
 
-Long threads get expensive: every turn re-reads the whole history, and this
-project generates lots of screenshots and code dumps. Prefer cropped images or
-pasted error text, batch related requests, and start a fresh conversation when
-a thread gets long.
+Long threads get expensive. Prefer cropped images or pasted error text,
+batch related requests, and start a fresh conversation when a thread gets
+long — see [docs/workflow.md § Cost management](docs/workflow.md) for why
+this is exactly what `/docs` exists to make cheap.

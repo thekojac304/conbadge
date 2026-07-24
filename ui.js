@@ -278,17 +278,24 @@ const BG_PRESETS = [
 (function(){
   const bar = document.getElementById('test-bar');
   const box = document.getElementById('test-chips');
+  const primary = document.getElementById('test-primary');
   const REACTS = [
     ['Pat','happy'], ['Blush','blush'], ['Giggle','giggle'],
     ['Belly','bellyRub'], ['Startle','fluster'], ['Dizzy','dizzy'], ['Boop','boop'],
     ['Wave R','wave:right'], ['Wave L','wave:left'],
   ];
-  let html = '<button class="chip stop" data-stop="1">■ Stop</button>';
-  html += GESTURE_LIST.map(g=>`<button class="chip" data-g="${g}">${g}</button>`).join('');
-  html += REACTS.map(([label,kind])=>`<button class="chip react" data-r="${kind}">${label}</button>`).join('');
-  box.innerHTML = html;
+  // Stop is a primary action alongside the Tuner chip (appended by the Tuner
+  // IIFE below). Gestures/reactions wrap into labelled sections — no horizontal
+  // scroll, so everything is reachable on desktop and phone alike.
+  primary.innerHTML = '<button class="chip stop" data-stop="1">■ Stop</button>';
+  box.innerHTML =
+    '<div class="test-sec-label">Gestures</div><div class="test-sec">'+
+      GESTURE_LIST.map(g=>`<button class="chip" data-g="${g}">${g}</button>`).join('')+'</div>'+
+    '<div class="test-sec-label">Reactions</div><div class="test-sec">'+
+      REACTS.map(([label,kind])=>`<button class="chip react" data-r="${kind}">${label}</button>`).join('')+'</div>';
 
-  box.addEventListener('click', e=>{
+  // Delegate on the whole bar so it covers both #test-primary and #test-chips.
+  bar.addEventListener('click', e=>{
     const b = e.target.closest('.chip'); if(!b) return;
     if (b.dataset.stop){
       gestures.cur = null; gestures.gainTarget = 1; gestures.next = rand(8,20);
@@ -323,8 +330,8 @@ const BG_PRESETS = [
    "Tuner" chip is appended to the test bar. Offsets are ADDITIVE on the
    animation's own pose. */
 (function(){
-  const box = document.getElementById('test-chips');
-  if (!box) return;
+  const primary = document.getElementById('test-primary');
+  if (!primary) return;
 
   const REACTIONS = ['happy','blush','giggle','bellyRub','fluster','dizzy','boop','wave:right','wave:left'];
   // X/Y/Z euler + a twist (axial roll → pose.twist). Index maps to override[i].
@@ -624,10 +631,9 @@ const BG_PRESETS = [
     buildBones(); syncSliders();
   });
   // ===== end removable wiring =====
-  el('tn-anim').addEventListener('change', ()=>{
-    const [kind, ...rest] = el('tn-anim').value.split(':');
-    tunerHold(kind, rest.join(':'));
-  });
+  // Switching the held animation must also stop any clip playback, or both would
+  // drive the pose at once — enterPose() re-holds the newly selected animation.
+  el('tn-anim').addEventListener('change', enterPose);
   el('tn-zero').addEventListener('click', ()=>{ if(cur()){ tuner.overrides[cur()] = [0,0,0,0]; refresh(); } });
   el('tn-reset').addEventListener('click', ()=>{ tuner.overrides = {}; tuner.face = {}; buildFace(); refresh(); });
 
@@ -700,17 +706,37 @@ const BG_PRESETS = [
       || '<option value="">(no saved clips)</option>';
   }
   function holdCurrent(){ const [kind, ...rest] = el('tn-anim').value.split(':'); tunerHold(kind, rest.join(':')); refresh(); }
+  // The single "sliders are live" transition. Stops any clip playback/preview and
+  // re-holds the selected animation so the Tuner (applyTuner) is the ONE driver.
+  // Every path that finishes playing/scrubbing/switching routes through here, so
+  // the resting state is always live posing and the sliders can never go stale.
+  function enterPose(){
+    clips.stop();
+    dimPlay = false; applyDim();
+    holdCurrent();                 // tunerHold(current) + refresh() → tuner.active = true
+    positionPlayhead(); updatePlayBtn();
+  }
   function tickTimeline(){
     if (clips.playing && !clips.paused){
       positionPlayhead(); updatePlayBtn(); dimPlay = true; applyDim();
       rafId = requestAnimationFrame(tickTimeline);
-    } else { rafId = 0; updatePlayBtn(); dimPlay = false; applyDim(); }
+    } else {
+      rafId = 0; dimPlay = false;
+      // A non-loop clip that ran off its end returns to live posing; a deliberate
+      // pause stays frozen on its frame (clip is the single driver until resumed).
+      if (clips.ended) enterPose(); else { updatePlayBtn(); applyDim(); }
+    }
   }
   const startTimeline = () => { if (!rafId) rafId = requestAnimationFrame(tickTimeline); };
 
   // Dim while dragging a bone/face slider (delegated) — release anywhere clears.
+  // Self-heal: grabbing a slider while a clip is frozen (paused/scrubbed) hands
+  // control back to the live Tuner first, so a bone move always affects the avatar.
   panel.addEventListener('pointerdown', ev=>{
-    if (ev.target && ev.target.matches && ev.target.matches('input[type=range]')){ dimDrag = true; applyDim(); }
+    if (ev.target && ev.target.matches && ev.target.matches('input[type=range]')){
+      if (clips.playing) enterPose();
+      dimDrag = true; applyDim();
+    }
   });
   window.addEventListener('pointerup', ()=>{ if (dimDrag){ dimDrag = false; applyDim(); } });
 
@@ -753,7 +779,7 @@ const BG_PRESETS = [
 
   el('kf-edit').addEventListener('click', ()=>{
     if (!selKey) return;
-    clips.stop(); holdCurrent();                 // back to posing over the base
+    enterPose();                                 // back to live posing over the base
     tuner.overrides = {}; tuner.face = {};        // load the selected key's pose in
     for (const b in selKey.ov) tuner.overrides[b] = selKey.ov[b].slice(0,4);
     for (const m in selKey.face) tuner.face[m] = selKey.face[m];
@@ -786,7 +812,7 @@ const BG_PRESETS = [
     else { tunerRelease(); selKey = null; renderTrack(); clips.play(buildEditClip()); }
     startTimeline(); updatePlayBtn();
   });
-  el('kf-stop').addEventListener('click', ()=>{ clips.stop(); holdCurrent(); positionPlayhead(); updatePlayBtn(); dimPlay = false; applyDim(); });
+  el('kf-stop').addEventListener('click', enterPose);
 
   el('kf-save').addEventListener('click', ()=>{
     const name = (el('kf-name').value || '').trim();
@@ -836,11 +862,13 @@ const BG_PRESETS = [
   }
   el('tn-close').addEventListener('click', ()=>setOpen(false));
 
+  // Primary action, pinned first in the menu's top row so it never hides behind a
+  // scroll of gesture/reaction chips.
   const chip = document.createElement('button');
   chip.className = 'chip react';
-  chip.textContent = '⚙ Tuner';
+  chip.textContent = '⚙ Animation Tuner';
   chip.addEventListener('click', ()=>setOpen(!open));
-  box.appendChild(chip);
+  primary.insertBefore(chip, primary.firstChild);
 })();
 
 // Motion sensors toggle

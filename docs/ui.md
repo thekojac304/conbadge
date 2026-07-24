@@ -89,11 +89,27 @@ full VRM remount** from the cached buffer, because morph pruning happens at
 load time (see [performance.md](performance.md)) — enabling a previously
 pruned morph requires re-running `setupMorphs()`.
 
-### Test bar (clapperboard icon, setup mode only)
+### Animation menu (clapperboard icon, setup mode only)
 
-Fires any gesture or reaction on demand, skipping the random idle timer and
-the fade-in — essential for verifying an animation change without waiting
-8–20s for it to come up naturally.
+The 🎬 button toggles `#test-bar`, a **bottom-docked wrapping popover** (not a
+horizontally-scrolling strip). Fires any gesture or reaction on demand, skipping
+the random idle timer and the fade-in — essential for verifying an animation
+change without waiting 8–20s for it to come up naturally. Layout:
+
+- **Primary row (`#test-primary`):** `⚙ Animation Tuner` + `■ Stop`, pinned at
+  the top as equal-width primary actions so the Tuner is reachable in one tap and
+  never hides behind a scroll of chips. The Tuner chip is inserted here by the
+  Tuner IIFE (`primary.insertBefore(chip, primary.firstChild)`); Stop is built by
+  the test-bar IIFE. Click handling is delegated on the whole `#test-bar` so it
+  covers both containers.
+- **Sections (`#test-chips`):** Gestures and Reactions as labelled
+  `flex-wrap` rows — everything is visible without horizontal scroll on desktop,
+  and the popover scrolls **vertically** (capped `max-height:min(48vh,380px)`) on
+  a phone. This replaced the old single `overflow-x:auto` row where `⚙ Tuner` sat
+  dead-last and required scrolling the full width to reach.
+
+Markup + CSS live in `index.html` (`#test-bar`/`#test-panel`/`#test-primary`/
+`#test-chips`); the chip contents are filled in `ui.js`.
 
 ### Animation Tuner (`⚙ Tuner` chip in the test bar)
 
@@ -155,8 +171,34 @@ time).
   the next key) / **Del**.
 - **Play** toggles play/pause; a `requestAnimationFrame` loop (`tickTimeline`)
   moves the playhead and syncs the button label while `clips.playing`. **Stop**
-  ends playback and re-holds the base for posing. Non-loop playback auto-pauses
-  at the end (playhead parked) rather than stopping outright.
+  ends playback and re-holds the base for posing. Non-loop playback parks on the
+  last frame at the end and flags `clips.ended`, which `tickTimeline` uses to
+  return to live posing (see the single-driver rule below).
+
+#### Single source of truth (who drives the pose)
+
+The pose has exactly two possible drivers — the live Tuner (`applyTuner`, gated
+on `tuner.active`) and clip playback (`clips.update`, gated on `clips.playing`).
+The invariant is **exactly one drives at a time, and the resting state is always
+live posing** (`tuner.active === !clips.playing`). One helper enforces it:
+
+- **`enterPose()`** — the canonical "sliders are live" transition:
+  `clips.stop()` → `holdCurrent()` (re-hold the selected animation, `tuner.active
+  = true`) → clear the play-dim → reposition playhead. **Stop**, **Edit pose**,
+  **switching the animation dropdown**, and **auto-end of a non-loop clip** (via
+  `tickTimeline` seeing `clips.ended`) all route through it.
+- **Self-heal:** grabbing any bone/face slider while a clip is frozen
+  (scrub-parked or paused) calls `enterPose()` first (delegated `pointerdown` on
+  the panel), so a bone move *always* affects the avatar immediately.
+- Play (fresh) and scrub-start are the only paths that release the Tuner
+  (`tunerRelease()`), handing the single driver to the clip; manual **Pause** is
+  the one deliberate frozen state (clip stays the driver until resumed or a
+  slider/Stop returns to posing).
+
+This replaced an earlier ad-hoc scheme where several exit paths (non-loop end,
+scrub-release, pause) left the Tuner *released but not posing* — the sliders
+still moved and printed deltas but `applyTuner` early-returned, so bone changes
+silently stopped affecting the avatar until Stop/Edit was hit.
 - **Removability:** deep-copied via `cloneKey()` on save/load/dup so no keyframe
   ever shares a channel array (a shared array would corrupt keys when one is
   edited — the specific bug the harness checks for).
@@ -254,6 +296,10 @@ tap away.
 - The Tuner panel is unstyled inline CSS injected via `innerHTML`, separate
   from the main settings sheet's stylesheet — consistent internally but not
   reusing the app's design tokens.
+- **Samsung Internet browser misbehaves with the bottom-docked keyframe bar**
+  (`#kf-bar`) — confirmed fine in Chrome, reported broken in Samsung
+  Internet. Deemed not worth chasing (likely a Samsung Internet rendering
+  quirk with the fixed-position bar); parked rather than fixed.
 
 ## Future ideas
 

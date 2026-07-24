@@ -137,6 +137,19 @@ from the shoulder line. See CLAUDE.md Conventions: "Proportional offsets."
 
 ## Future ideas
 
-- None currently tracked. Framing/rig-measurement code has been stable
+- Framing/rig-measurement code: none currently tracked — it's been stable
   since the KOJAC avatar was fitted; revisit only if a second avatar with
   meaningfully different proportions or bone naming is added.
+- **Backdrop, tunable-by-feel knobs** (confirmed working; these are tuning
+  targets, not open bugs): `CONFIG.BG_PARALLAX_PX` (default 34, how far the
+  backdrop slides on tilt — 0 = static; slide sign is set in
+  `camera.js:updateBackdrop`); per-style orb sizes/positions + `drift1/2/3`;
+  aurora bands + `aur1/2/3`; star counts/colours in `ui.js:buildStarfield()`
+  plus depth/twinkle in the `.sl1/2/3` CSS rules. Per-Look backdrop colours
+  live in each Look's `bg` block in `light.js`.
+- **Deferred: Tier-1 3D background.** An equirectangular HDRI/360 skybox as
+  `scene.background`, pairing with parallax + environment lighting. Wanted,
+  parked — in-game VRChat 360 capture looks deprecated as a source, so this
+  would need to start from a CC0 HDRI (e.g. Poly Haven) instead.
+- **Deferred: multi-layer bokeh** at different depths, as a further backdrop
+  style alongside orbs/starfield/aurora/plain.

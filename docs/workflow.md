@@ -52,14 +52,40 @@ verification internal, report the result.
 
 ### Documentation maintenance
 
-This project's `/docs` folder (this file included) is meant to persist
-context **between Claude Code sessions**, since each new session starts
-without memory of prior ones. See [CLAUDE.md](../CLAUDE.md) for the rule:
-whenever a change touches architecture, a subsystem's behavior, or a
-standing decision, update the relevant `docs/*.md` file(s) in the same pass
-— don't let docs drift out of sync with what's actually shipped. Always keep
-[docs/current-focus.md](current-focus.md) current as the lightweight
-session-to-session handoff.
+This project's `/docs` folder is meant to persist context **between Claude
+Code sessions** — each new session starts without memory of prior ones, so
+`/docs` (not scrollback, not chat history) is the durable record. Start at
+[docs/index.md](index.md) for the file map and the recommended read order
+for a new session.
+
+**Documentation is part of a feature's definition of done, not a separate
+pass.** When a change meaningfully touches architecture, a subsystem's
+behavior, workflow, or introduces a standing decision (a tuning convention,
+a deliberate tradeoff, a "why we didn't do X"), update the relevant docs in
+the *same* handover as the code:
+
+- Update the relevant `docs/*.md` subsystem file(s).
+- Update [docs/current-focus.md](current-focus.md) to reflect the new
+  active state.
+- Remove information the change makes obsolete — a doc that only ever grows
+  is as much drift as one that never updates.
+- Don't document temporary experiments or work that got reverted — if it
+  didn't ship, it doesn't belong in a subsystem doc (a rejected approach's
+  *lesson* can be worth a line — see e.g. ui.md's note on the rejected SVG
+  region picker — but not its full narrative).
+
+**Do NOT touch docs for:** formatting, refactoring, variable renames, tiny
+numeric tuning (a config constant nudged by feel), or insignificant bug
+fixes. These don't change architecture, behavior, or decisions — updating
+docs for them is churn that makes real doc updates harder to spot in a diff.
+
+**`current-focus.md` is a tracker, not a changelog.** Keep only active work,
+current blockers, and next priorities — anything the next session needs
+*immediately*. Implementation history belongs in `git log` (which already
+has descriptive commit messages) and in the subsystem docs' own "Current
+implementation" sections. The moment an active-work entry resolves, either
+delete it or fold its durable lesson into the relevant subsystem doc, and
+remove it from the tracker — don't leave resolved threads accumulating.
 
 ## Design philosophy
 

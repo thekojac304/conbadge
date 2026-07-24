@@ -942,21 +942,24 @@ const clips = {
   playing:null,               // the clip currently playing/previewing, or null
   t:0,
   paused:false,               // Phase 2 scrub: hold t, keep applying the sample
+  ended:false,                // a non-loop clip just ran off its end (vs. a deliberate pause)
   editKeys:[],                // the clip being authored (array of keyframes)
   cur:{ ov:{}, face:{} },     // this frame's interpolated snapshot (ears/tail read here)
-  play(clip){ this.playing = clip; this.t = 0; this.paused = false; gestures.fadeOut(); },
+  play(clip){ this.playing = clip; this.t = 0; this.paused = false; this.ended = false; gestures.fadeOut(); },
   // Freeze on a clip at a specific time — the timeline scrub/preview path.
-  scrub(clip, t){ this.playing = clip; this.t = t; this.paused = true; gestures.fadeOut(); },
+  scrub(clip, t){ this.playing = clip; this.t = t; this.paused = true; this.ended = false; gestures.fadeOut(); },
   seek(t){ this.t = t; },
   pause(){ this.paused = true; },
-  resume(){ this.paused = false; },
-  stop(){ this.playing = null; this.paused = false; this.cur = { ov:{}, face:{} }; },
+  resume(){ this.paused = false; this.ended = false; },
+  stop(){ this.playing = null; this.paused = false; this.ended = false; this.cur = { ov:{}, face:{} }; },
   update(dt){
     if (!this.playing) return;
     const c = this.playing;
     if (!this.paused){
       this.t += dt;
-      if (this.t >= c.dur){ if (c.loop) this.t %= c.dur; else { this.t = c.dur; this.paused = true; } }
+      // Non-loop clip hitting its end parks on the last frame and flags `ended`
+      // so the UI can hand control back to the live Tuner (single-driver rule).
+      if (this.t >= c.dur){ if (c.loop) this.t %= c.dur; else { this.t = c.dur; this.paused = true; this.ended = true; } }
     }
     const snap = sampleClip(c, this.t);
     this.cur = snap;

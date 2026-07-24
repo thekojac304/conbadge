@@ -119,10 +119,18 @@ underneath for free), layered like a gesture.
   `localStorage['cb.clips']`.
 - **Player states (`clips` in `anim.js`):** `play` (advance `t`), `scrub`/
   `pause` (hold `t`, keep applying the sample — this is what the scrub/preview
-  path uses), `resume`, `stop`. Non-loop playback auto-pauses at `dur` (playhead
-  parks at the end) rather than tearing down, so the UI can reflect the state.
-  A `requestAnimationFrame` loop in `ui.js` moves the playhead + syncs the
+  path uses), `resume`, `stop`. Non-loop playback parks on the last frame at
+  `dur` and sets `clips.ended` (rather than tearing down), so the UI's
+  `tickTimeline` can hand control back to the live Tuner. A
+  `requestAnimationFrame` loop in `ui.js` moves the playhead + syncs the
   Play/Pause label while `clips.playing`.
+- **Single-driver rule.** The clip player and the live Tuner are the two possible
+  pose drivers (`clips.update` vs. `applyTuner`); exactly one is active at a time
+  and the resting state is always live posing (`tuner.active === !clips.playing`).
+  The UI enforces this through one `enterPose()` transition and self-healing
+  sliders — see [ui.md § Single source of truth](ui.md). `clips.ended` exists so
+  a finished non-loop clip is distinguishable from a deliberate pause and can
+  return to posing on its own.
 - **Not yet (Phase 3):** procedural secondary-motion enrichment, touch-zone
   binding / built-in override (the "bridge"), export/bake-to-source. Clips
   still only play from the Tuner; nothing fires them in normal use yet, and a
@@ -173,6 +181,11 @@ because settling to idle doesn't have the same "catching up" problem).
   constants, because that pose was iterated on heavily via the Tuner and the
   forward-hunch mechanism (curling spine+chest forward about the hip base,
   not sideways arm splay) was non-obvious to arrive at.
+- **VRM bind pose.** VRMs load in T-pose; the idle layer applies an
+  always-on resting pose every frame (not a one-time transition), so
+  `idle.update()` running is what holds the avatar in its normal stance at
+  all — a bug that skips it snaps straight back to T-pose, not to some
+  neutral default.
 
 ## Known limitations
 

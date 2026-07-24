@@ -2,9 +2,11 @@
 
 ## Current implementation
 
-Plain ES modules, no build step, no bundler. `three.js` and `@pixiv/three-vrm`
-load from a CDN via an import map in `index.html`. Files sit at the repo root
-(not in a `js/` subfolder — see [workflow.md](workflow.md)).
+Plain ES modules, no build step, no bundler. `three.js` `0.169.0` and
+`@pixiv/three-vrm` `3.4.0` load from a CDN via an import map in `index.html`
+(three-vrm imports bare `"three"`, so the map must resolve both to one
+copy). Files sit at the repo root (not in a `js/` subfolder — see
+[workflow.md](workflow.md)).
 
 Dependency flow is one-directional, no cycles:
 

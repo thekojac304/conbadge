@@ -181,15 +181,22 @@
                 pointer-events:none; }
   #corner-hint::after{ content:""; position:absolute; left:14px; top:calc(14px + env(safe-area-inset-top));
                 width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.10); }
-  /* Animation test bar — non-modal so you can watch the result while poking it */
-  #test-bar{ position:fixed; z-index:7; left:0; right:0;
+  /* Animation menu — non-modal popover so you can watch the result while poking it.
+     Bottom-docked card that WRAPS (no horizontal scroll); Tuner + Stop pinned on top. */
+  #test-bar{ position:fixed; z-index:7; left:10px; right:10px;
              bottom:max(10px, env(safe-area-inset-bottom));
-             display:none; padding:0 10px; }
+             display:none; }
   #test-bar.show{ display:block; }
   body.mode-play #test-bar{ display:none !important; }
-  #test-chips{ display:flex; gap:7px; overflow-x:auto; padding:9px 4px;
-               scrollbar-width:none; -webkit-overflow-scrolling:touch; }
-  #test-chips::-webkit-scrollbar{ display:none; }
+  #test-panel{ margin:0 auto; max-width:660px; max-height:min(48vh,380px); overflow-y:auto;
+               background:var(--sheet); border:1px solid var(--stroke); border-radius:14px;
+               backdrop-filter:blur(10px); padding:10px 12px 12px;
+               box-shadow:0 10px 34px rgba(0,0,0,.42); scrollbar-width:thin; }
+  #test-primary{ display:flex; gap:8px; margin-bottom:4px; }
+  #test-primary .chip{ flex:1; justify-content:center; text-align:center; }
+  .test-sec-label{ font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase;
+                   opacity:.55; margin:11px 2px 6px; }
+  #test-chips .test-sec{ display:flex; flex-wrap:wrap; gap:7px; }
   .chip{ flex:none; padding:9px 13px; border-radius:11px; font-size:13px; font-weight:600;
          border:1px solid var(--stroke); background:var(--sheet); color:var(--ink);
          backdrop-filter:blur(8px); cursor:pointer; white-space:nowrap; }
@@ -360,8 +367,11 @@
     <button class="tool" id="btn-gear"  title="Settings"   aria-label="Settings">⚙</button>
   </div>
 
-  <!-- Animation test bar (setup mode only) -->
-  <div id="test-bar"><div id="test-chips"></div></div>
+  <!-- Animation menu popover (setup mode only) -->
+  <div id="test-bar"><div id="test-panel">
+    <div id="test-primary"></div>
+    <div id="test-chips"></div>
+  </div></div>
 
   <!-- Play-mode exit (revealed by tapping the top-left corner) -->
   <button id="play-exit">✕ Exit play mode</button>
