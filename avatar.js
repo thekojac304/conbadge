@@ -113,6 +113,48 @@ function attachLooseMeshes(v){
   return attached;
 }
 
+/* ---------------------------------------------------------------------------
+   Skinning audit (diagnostic only — changes nothing about the scene).
+
+   A garment exported with its OWN copy of the armature IS a real SkinnedMesh,
+   but it's skinned to bones the VRM humanoid never drives. It renders frozen at
+   its bind pose while the body animates — visually identical to "not rigged at
+   all", and invisible to attachLooseMeshes(), which deliberately skips skinned
+   meshes. This flags the case in the load readout.
+
+   "Live" bone = the humanoid drives it: it's a raw humanoid bone node, or it
+   descends from one (in a correctly merged rig every bone descends from hips).
+   For a mesh with dead bones we also count how many of those have a same-named
+   counterpart in the live skeleton — that's how retargetable it would be.
+--------------------------------------------------------------------------- */
+const baseBoneName = n => (n||'').replace(/\.\d+$/,'').replace(/[\s_-]*(copy|clone)$/i,'').toLowerCase();
+
+function auditSkinning(v, entries){
+  const driven = new Set(Object.values(rig.raw||{}));
+  if(!driven.size) return;
+  const isLive = (b)=>{ let p=b; while(p){ if(driven.has(p)) return true; p=p.parent; } return false; };
+
+  const liveNames = new Set();
+  v.scene.traverse(o=>{ if(o.isBone && isLive(o)) liveNames.add(baseBoneName(o.name)); });
+
+  const detail = [];
+  for (const e of entries){
+    const bones = e.mesh.skeleton?.bones;
+    if(!bones?.length) continue;
+    let live = 0, retarget = 0;
+    for (const b of bones){
+      if (isLive(b)) live++;
+      else if (liveNames.has(baseBoneName(b.name))) retarget++;
+    }
+    if (live === bones.length) continue;                 // fully driven — normal
+    e.line += live ? ` !${live}/${bones.length}` : ' DEAD';
+    if (retarget) e.line += `>${retarget}`;
+    detail.push(`${e.mesh.name||'?'}: ${live}/${bones.length} live, ${retarget} name-matched` +
+                ` (e.g. ${bones.filter(b=>!isLive(b)).slice(0,3).map(b=>b.name).join(', ')})`);
+  }
+  if (detail.length) console.warn('[conbadge] meshes skinned to bones the humanoid does not drive:\n' + detail.join('\n'));
+}
+
 function stripAllMorphs(v){
   v.scene.traverse(o=>{
     if(o.isMesh && o.geometry?.morphAttributes?.position){
@@ -265,12 +307,13 @@ async function mountVRM(buffer, filename){
     const bones  = o.skeleton?.bones?.length ?? 0;
     // Sk = skinned (follows the skeleton), Me = rigid mesh. A rigid mesh that
     // isn't parented under a bone can't animate at all — that's the "clothes
-    // just float there" case.
+    // just float there" case. So is a skinned mesh bound to bones the humanoid
+    // doesn't drive; auditSkinning() below appends DEAD / !live/total for those.
     const kind = o.isSkinnedMesh ? 'Sk' : 'Me';
     let p=o.parent, underBone=false;
     while(p){ if(p.isBone){ underBone=true; break; } p=p.parent; }
     const par = o.isSkinnedMesh ? '' : (underBone ? '+bone' : '+ROOT');
-    meshDiag.push(`${nm} ${kind}${par} v${verts} mo${morphs} b${bones}`);
+    meshDiag.push({ mesh:o, line:`${nm} ${kind}${par} v${verts} mo${morphs} b${bones}` });
 
     if (CONFIG.SOLID_DEBUG){
       o.material = new THREE.MeshBasicMaterial({ color: SOLID[solidIdx++ % SOLID.length], side: THREE.DoubleSide });
@@ -321,6 +364,10 @@ async function mountVRM(buffer, filename){
     const raw = v.humanoid.getRawBoneNode(name);
     if (raw){ rig.raw[name]=raw; }
   }
+  // Now that the humanoid's raw bones are resolved we can tell which skinned
+  // meshes are actually driven by them (diagnostic only — see auditSkinning).
+  try{ auditSkinning(v, meshDiag); }catch(e){ console.warn('[conbadge] skinning audit failed', e); }
+
   // First update so normalized rest pose is valid, then capture rest quats.
   v.update(0);
   for (const name in rig.bones){ const n=rig.bones[name]; rig.rest.set(n, n.quaternion.clone()); }
@@ -397,7 +444,7 @@ async function mountVRM(buffer, filename){
   try{ v.springBoneManager?.joints?.forEach(()=>springCount++); }catch{}
   const info =
     `VRM ${ver} · ${CONFIG.BUILD} · meshes ${visMesh}/${meshCount}${attachedInfo}\n${morphInfo}\n`+
-    meshDiag.join('\n')+`\n`+
+    meshDiag.map(e=>e.line).join('\n')+`\n`+
     `face: ${Object.keys(rig.morphs||{}).filter(k=>rig.morphs[k]?.length).join(',')||'none'}\n`+
     `tail ${rig.tail.length} ears ${rig.ears.length} springs ${springCount}`+
     (lookInfo?`\n${lookInfo}`:'')+

@@ -55,6 +55,14 @@ moment it's resolved instead of letting it accumulate._
   doesn't fire in this sandbox, so confirm the panel dims while a clip plays.
   (Unaffected by the b87 state fix; `enterPose()` clears `dimPlay` on return.)
 
+- **Second-avatar outfit doesn't animate** (`b92`, diagnostic only so far).
+  An avatar exported with a full outfit renders the outfit frozen at bind pose.
+  `b92` adds `auditSkinning()` so the load readout says *which* failure it is
+  (`Me+ROOT` unweighted static geometry vs `Sk … DEAD>N` duplicate armature) —
+  see [rendering.md](rendering.md). **Owed:** load that avatar, read the outfit's
+  mesh line, report it. Then decide: re-export with a merged armature (only real
+  fix), or an in-app name-based rebind if the `>N` retarget count is high.
+
 ## Blocked / pending
 
 - **Idle resting-pose tuning.** The Tuner's **Base → idle** target

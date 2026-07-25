@@ -129,8 +129,10 @@ See [docs/lighting.md](docs/lighting.md) for the "Look" system (`light.js`)
 - **`ZONE_DEBUG`**: colour-coded dots at every touch anchor.
 - **`SOLID_DEBUG`**: flat-shades meshes to separate geometry from material
   issues.
-- **Load readout**: VRM version, build stamp, mesh list classification, morph
-  counts, matched expressions, tail/ear/spring counts.
+- **Load readout**: VRM version, build stamp, mesh list classification (incl.
+  `DEAD`/`!live/total` flags for meshes skinned to bones the humanoid doesn't
+  drive — see [docs/rendering.md](docs/rendering.md)), morph counts, matched
+  expressions, tail/ear/spring counts.
 
 ## Cost management
 

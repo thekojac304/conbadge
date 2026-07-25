@@ -24,6 +24,15 @@ renderer itself (`core.js`). Lighting/shading is a separate system — see
    nothing jumps. This only fixes *rigid* props — a garment that should
    deform needs re-weighting in the original export.
 6. `applyLook(v)` applies the current lighting Look to materials.
+6b. `auditSkinning()` (diagnostic only, runs once the humanoid's raw bones are
+   resolved) checks every `SkinnedMesh` against the bones the humanoid
+   actually drives — a bone counts as *live* if it is a raw humanoid bone or
+   descends from one. Meshes that aren't fully live get a marker appended to
+   their load-readout line: `DEAD` (no live bones at all — a garment exported
+   with its own duplicate armature) or `!<live>/<total>` (partially bound).
+   A trailing `>N` counts how many dead bones have a same-named counterpart
+   in the live skeleton after stripping `.001`-style suffixes — i.e. how
+   retargetable a rebind would be. Full per-mesh detail goes to the console.
 7. Rig resolution: normalized bones (`rig.bones`, what gets animated) and raw
    bones (`rig.raw`, actual render-space nodes) are both captured per entry
    in `MANAGED` (humanoid bones + finger bones). Rest quaternions are
@@ -122,6 +131,14 @@ from the shoulder line. See CLAUDE.md Conventions: "Proportional offsets."
 - **Loose-mesh reattachment only fixes rigid props**, not deforming
   garments — documented in the function's own comment and worth restating
   here since it's an easy fix to reach for on the wrong kind of bug.
+- **"Clothes just float there" has two distinct causes**, and they need
+  different fixes, which is why the readout distinguishes them:
+  `Me+ROOT` = unweighted static geometry (rescued rigidly by
+  `attachLooseMeshes()`); `Sk … DEAD` = skinned to a duplicate armature the
+  humanoid never drives, which `attachLooseMeshes()` deliberately skips
+  because the mesh *is* skinned. Only a re-export with a merged armature
+  gives real deformation; a name-based rebind (unimplemented, gated on the
+  `>N` count being high) would be the in-app approximation.
 
 ## Known limitations
 
