@@ -73,6 +73,7 @@ Registered today:
 | Slice | Owner | Data |
 |---|---|---|
 | `settings` v1 | `project.js` (it can import `core` directly) | the whole `settings` object |
+| `avatar` v1 | `project.js` via `noteAvatar()` | `{name, size}` — a **reference**, never the model |
 | `clips` v2 | `anim.js` | `{library, editKeys, editName, editLoop}` |
 | `tuner` v1 | `anim.js` | `{overrides, face}` |
 
@@ -133,6 +134,31 @@ This exists because **the load readout is itself a `toast()`**, so it shares
 the readout reliably overwrites any boot-time toast — including the legacy-import
 message, which was consequently never seen on-device. Save state has to live in
 the readout itself, not in a toast that the readout replaces.
+
+### Export / import
+
+`exportProject()` returns `{json, filename}` — the record itself plus an
+`exportedAt`, pretty-printed, named
+`{project}-{date}-rev{n}.conbadge.json`. `ui.js` turns it into a Blob download.
+It `save()`s first (never `flush()`, which only writes an *already pending*
+save), and rethrows `state.lastError` rather than handing over a file that
+silently predates the current state.
+
+The **avatar is a reference only** (`{name, size}`): a 30MB VRM base64'd into
+JSON is ~40MB of string to build on a phone, and the user already has the file.
+Import reports which `.vrm` to load.
+
+`importProject(text)` validates `magic`, refuses a `schema` newer than this build
+understands, then **saves the current state to the history ring first** so an
+import is walk-back-able rather than one-way; the return value includes the
+`restorePoint` rev to make that actionable in a toast. The imported record adopts
+the local `ACTIVE_ID` and continues **local** rev numbering — revs must never go
+backwards, or the mirror comparison breaks.
+
+Both import and `restore()` mutate `settings` without going through
+`saveSettings()`, which is why `writeMirrorRev()` rewrites the `cb.settings`
+mirror too. Without that, the stale mirror wins the equal-rev comparison on the
+next load and **silently reverts the import** — it is regression-tested.
 
 ### Migrations
 
@@ -206,19 +232,19 @@ until phase 2 — the version bump is the risky part, so it's worth doing once.
   a key like `bgAuto` (default `true`) currently reads falsy for those users, so
   merging would switch their backdrop to Look-matched colours.
 
-- No export/import yet (phase 3), so there is still **no off-device copy** — the
-  only protection against losing the origin's storage entirely.
-- `history()`/`restore()` exist and are tested, but nothing in the UI calls them
-  yet; restoring a revision currently needs a console.
 - Single project (`p_default`). The store is keyed for more; the UI isn't built.
-- `flush()` only writes a *pending* debounced save; it is not "ensure persisted".
-  Phase 3's export should `save()` first rather than `flush()`.
+- `flush()` only writes a *pending* debounced save; it is **not** "ensure
+  persisted". Call `save()` when the write must definitely happen.
+- Import/restore use `confirm()`. Fine on a phone, but it's the only blocking
+  browser dialog in the app.
+- Export is manual. There's a staleness nudge in the Project card at 14 days, but
+  nothing automates the backup.
 
 ## Future ideas
 
-- Phase 3: Project card in the settings sheet — name, last-saved stamp, Export /
-  Import `.conbadge.json`, a restore-from-autosave list on top of `history()`/
-  `restore()`, `navigator.storage.estimate()` readout, and a nudge when the last
-  export goes stale.
-- Later: optional binary container carrying the VRM bytes; multiple named
-  projects.
+- Optional binary container carrying the VRM bytes, so one file moves everything
+  (a magic header + JSON + raw bytes, ~40 lines, no dependencies — deliberately
+  not base64).
+- Multiple named projects, on the already-keyed `projects` store.
+- Auto-export reminder, or a periodic export straight to the Downloads folder if
+  the File System Access API ever lands on mobile.

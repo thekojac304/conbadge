@@ -42,7 +42,7 @@ export function register(spec){
 
 export const state = {
   ready:false, rev:0, savedAt:null, name:'', persisted:false,
-  lastError:null, lastSavedReason:null, migratedFrom:null,
+  lastError:null, lastSavedReason:null, migratedFrom:null, lastExportAt:null,
 };
 
 let raw = null;        // the record as loaded, incl. slices this build doesn't know
@@ -111,6 +111,25 @@ register({
 // The `clips` and `tuner` slices are registered by anim.js, which owns that
 // state. project.js only needs to know cb.clips exists for the legacy import.
 
+// Avatar reference ONLY — name and byte size, never the VRM itself. A 30MB model
+// base64'd into JSON is ~40MB of string to build on a phone, and you already have
+// the .vrm file; import just tells you which one to pick.
+let avatarRef = null;
+export function noteAvatar(name, size){
+  const next = name ? { name, size:size|0 } : null;
+  if (JSON.stringify(next) === JSON.stringify(avatarRef)) return;
+  avatarRef = next;
+  saveSoon('avatar');
+}
+register({
+  id:'avatar', version:1,
+  capture: ()=> avatarRef,
+  // Don't clobber a live avatar with the record's reference — load() runs before
+  // the VRM mounts, so this only fills in what the record remembered.
+  apply: d => { if (!avatarRef && d && d.name) avatarRef = d; },
+});
+export function avatarInfo(){ return avatarRef; }
+
 /* ===========================================================================
    Record build / load / save
    =========================================================================== */
@@ -171,6 +190,8 @@ export async function load(){
     }
   } catch(e){}
 
+  try { state.lastExportAt = (await idbGet('lastExportAt', 'meta')) || null; } catch(e){}
+
   let rec = null;
   try { rec = await idbGet(ACTIVE_ID, 'projects'); }
   catch(e){
@@ -223,8 +244,16 @@ export async function load(){
   return state;
 }
 
+// The mirror is rewritten from the SAME `settings` object the record just
+// captured, so the two can never disagree at equal revs. This is load-bearing
+// for import/restore: those mutate `settings` without going through
+// saveSettings(), so without it the stale mirror would win the equal-rev
+// comparison on the next load and silently revert the import.
 function writeMirrorRev(rev){
-  try { localStorage.setItem(REV_KEY, String(rev)); } catch(e){}
+  try {
+    localStorage.setItem(REV_KEY, String(rev));
+    localStorage.setItem(LEGACY_SETTINGS, JSON.stringify(settings));
+  } catch(e){}
 }
 
 export async function save({ reason='manual' } = {}){
@@ -294,6 +323,61 @@ export async function restore(rev){
   await save({ reason:`restore-${rev}` });
   toast(`Restored revision ${rev}`, 4000);
   return state;
+}
+
+/* ===========================================================================
+   Export / import
+   =========================================================================== */
+// Autosave protects against crashes and reloads. Export is the ONLY thing that
+// protects against the storage layer itself — eviction, "clear site data", a
+// lost or wiped phone. Nothing leaves the device: this is a local download.
+export async function exportProject(){
+  await save({ reason:'pre-export' });          // the file must reflect current state
+  if (state.lastError) throw state.lastError;   // don't hand over a stale export silently
+  const rec = JSON.parse(JSON.stringify(raw));
+  rec.exportedAt = new Date().toISOString();
+  const stamp = rec.exportedAt.slice(0,10);
+  const base = (state.name || 'conbadge').trim().replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') || 'conbadge';
+  state.lastExportAt = rec.exportedAt;
+  try { await idbPut('lastExportAt', rec.exportedAt, 'meta'); } catch(e){}
+  return { json: JSON.stringify(rec, null, 2),
+           filename: `${base}-${stamp}-rev${rec.rev}.conbadge.json` };
+}
+
+// Replaces the active project. The pre-import state is saved to the history ring
+// first, so an import is recoverable via restore() rather than being one-way.
+export async function importProject(text){
+  let rec;
+  try { rec = JSON.parse(text); }
+  catch(e){ throw new Error('Not a valid project file — could not read it as JSON'); }
+  if (!rec || rec.magic !== MAGIC) throw new Error('Not a Con Badge project file');
+  if ((rec.schema|0) > SCHEMA)
+    throw new Error(`This project was written by a newer build (format ${rec.schema}, this build reads ${SCHEMA}). Update the badge first.`);
+
+  await save({ reason:'pre-import' });           // current state -> history, recoverable
+  const restorePoint = state.rev;
+
+  raw = migrateEnvelope(rec);
+  raw.id = ACTIVE_ID;                            // adopt it as this device's active project
+  state.name = raw.name || '';
+  state.migratedFrom = null;
+  for (const spec of slices.values()) applySlice(spec, raw.slices?.[spec.id]);
+  await save({ reason:'import' });
+  return { rev:state.rev, name:state.name, restorePoint,
+           avatar:raw.slices?.avatar?.data || null,
+           clips:Object.keys(raw.slices?.clips?.data?.library || {}).length };
+}
+
+export function setName(name){
+  state.name = (name || '').slice(0, 60);
+  if (raw) raw.name = state.name;
+  saveSoon('name');
+}
+
+// {usage, quota} in bytes, or null where the browser won't say.
+export async function estimate(){
+  try { const e = await navigator.storage?.estimate?.(); return e ? { usage:e.usage, quota:e.quota } : null; }
+  catch(e){ return null; }
 }
 
 // Debounced autosave. Every mutation path calls this; flush() forces it out.

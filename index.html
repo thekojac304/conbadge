@@ -318,6 +318,10 @@
   .slider-row .sv{ flex:none; width:42px; text-align:right; font-size:12px; color:var(--ink-dim); }
   select{ background:rgba(255,255,255,.06); color:var(--ink); border:1px solid var(--stroke);
           border-radius:10px; padding:9px 12px; font-size:15px; }
+  /* A select defaults to the width of its WIDEST option, so a long label (the
+     revision list) pushes the whole sheet into horizontal overflow on a phone.
+     Constrain any select that sits in a full-width field. */
+  .field select{ width:100%; max-width:100%; }
   /* The dropdown popup is drawn by the OS, not the page, so it ignores the
      translucent --sheet background above — give it an opaque dark colour or
      it falls back to the platform default (light bg + our light --ink text
@@ -414,6 +418,7 @@
         <button class="tab" data-tab="camera">Camera</button>
         <button class="tab" data-tab="avatar">Avatar</button>
         <button class="tab" data-tab="display">Display</button>
+        <button class="tab" data-tab="project">Project</button>
       </nav>
 
       <!-- ---------- BADGE ---------- -->
@@ -633,11 +638,51 @@
           <button class="btn primary wide" id="btn-play2">Enter play mode</button>
         </div>
       </section>
+
+      <!-- ---------- PROJECT ---------- -->
+      <section class="panel" data-panel="project">
+        <div class="card">
+          <div class="card-title">This project</div>
+          <div class="field">
+            <input type="text" id="pj-name" placeholder="Project name" autocomplete="off" maxlength="60" />
+          </div>
+          <p class="hint" id="pj-state" style="margin-top:0">—</p>
+          <button class="btn ghost wide" id="pj-savenow">Save now</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Backup &amp; transfer</div>
+          <p class="hint" style="margin-top:0">Everything is saved on this device only — it never
+            leaves your phone. Export a file to move your badge to another device, or to keep a
+            copy if this browser ever clears its storage.</p>
+          <p class="hint" id="pj-export-age"></p>
+          <button class="btn primary wide" id="pj-export">Export project file…</button>
+          <button class="btn ghost wide" id="pj-import">Import project file…</button>
+          <p class="hint">The avatar model isn't included (it's large) — the file records which
+            <b>.vrm</b> to pick, and you load it again after importing.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Undo history</div>
+          <p class="hint" style="margin-top:0">Every change is autosaved as a revision. Restoring
+            one keeps the current state in the list, so this is always undoable.</p>
+          <div class="field">
+            <select id="pj-history"></select>
+          </div>
+          <button class="btn ghost wide" id="pj-restore">Restore selected revision</button>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Storage</div>
+          <p class="hint" id="pj-storage" style="margin-top:0">—</p>
+        </div>
+      </section>
     </div>
   </div>
 
-  <!-- Hidden file input -->
+  <!-- Hidden file inputs -->
   <input type="file" id="file" accept=".vrm,model/gltf-binary,application/octet-stream" style="display:none" />
+  <input type="file" id="pj-file" accept=".json,.conbadge.json,application/json" style="display:none" />
 
 <script>
   /* Surface any load/runtime error in the on-screen diagnostic box, so the app

@@ -228,7 +228,7 @@ els.bgB.addEventListener('input', e=>{ settings.bgB=e.target.value; applyBackgro
 els.tgBgAuto.addEventListener('change', e=>{ settings.bgAuto=e.target.checked; applyBackground(); saveSettings(); });
 els.selBgStyle.addEventListener('change', e=>{ settings.bgStyle=e.target.value; applyBgStyle(); saveSettings(); });
 
-function openSettings(){ els.sheet.classList.add('open'); renderMorphList(); }
+function openSettings(){ els.sheet.classList.add('open'); renderMorphList(); renderProject(); }
 function closeSettings(){ els.sheet.classList.remove('open'); }
 
 /* ---- Modes ---------------------------------------------------------------
@@ -255,6 +255,7 @@ document.getElementById('tabs').addEventListener('click', e=>{
   const which = btn.dataset.tab;
   document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('is-on', p.dataset.panel===which));
   document.getElementById('sheet').scrollTop = 0;
+  if (which === 'project') renderProject();   // save state / history / usage are live values
 });
 
 // Background presets — quicker than fiddling two colour pickers
@@ -1133,7 +1134,106 @@ fileInput.addEventListener('change', async ()=>{
   showOverlay(true, 'Loading avatar…', f.name, true);
   const buf = await f.arrayBuffer();
   try{ await idbPut('avatar', { name:f.name, buffer:buf }); }catch(e){ /* private mode: still load in-memory */ }
+  project.noteAvatar(f.name, buf.byteLength);   // name+size only; the model itself never goes in the project file
   await mountVRM(buf, f.name);
+});
+
+/* ===========================================================================
+   Project card — name, save state, export/import, undo history, storage
+   =========================================================================== */
+const pj = id => document.getElementById(id);
+const pjFile = pj('pj-file');
+
+function fmtBytes(n){
+  if (!(n >= 0)) return '?';
+  const u = ['B','KB','MB','GB']; let i = 0;
+  while (n >= 1024 && i < u.length-1){ n /= 1024; i++; }
+  return (i ? n.toFixed(1) : n) + ' ' + u[i];
+}
+function fmtAge(iso){
+  if (!iso) return null;
+  const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  return d <= 0 ? 'today' : d === 1 ? 'yesterday' : `${d} days ago`;
+}
+
+async function renderProject(){
+  if (!pj('pj-state')) return;
+  const s = project.state;
+  pj('pj-name').value = s.name || '';
+  const when = s.savedAt ? new Date(s.savedAt).toLocaleString() : 'not yet';
+  const av = project.avatarInfo();
+  pj('pj-state').innerHTML = s.lastError
+    ? `<b style="color:#ff8a8a">Not saving — ${s.lastError.message || s.lastError}</b>`
+    : `Revision ${s.rev} · last saved ${when}`
+      + (av ? `<br>Avatar: ${av.name} (${fmtBytes(av.size)})` : '')
+      + (s.persisted ? '<br>Protected from automatic cleanup by the browser.' : '');
+
+  // Nudge when the only off-device copy is getting old.
+  const age = fmtAge(s.lastExportAt);
+  pj('pj-export-age').innerHTML = !age
+    ? '<b>Never exported.</b> If this browser clears its data, everything here is gone.'
+    : (Date.now() - new Date(s.lastExportAt).getTime() > 14*86400000
+        ? `<b>Last exported ${age}</b> — worth taking a fresh copy.`
+        : `Last exported ${age}.`);
+
+  const hist = await project.history();
+  const shortWhen = iso => new Date(iso).toLocaleString([],
+    { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+  pj('pj-history').innerHTML = hist.length
+    ? hist.map(h => `<option value="${h.rev}">rev ${h.rev} · ${shortWhen(h.savedAt)} · ${h.reason||''}</option>`).join('')
+    : '<option value="">(no revisions yet)</option>';
+
+  const est = await project.estimate();
+  pj('pj-storage').textContent = est
+    ? `Using ${fmtBytes(est.usage)} of about ${fmtBytes(est.quota)} available to this site.`
+    : 'This browser will not report storage usage.';
+}
+
+pj('pj-name').addEventListener('input', e => project.setName(e.target.value));
+pj('pj-savenow').addEventListener('click', async ()=>{
+  await project.save({ reason:'manual' });
+  if (!project.state.lastError) toast('Saved — revision ' + project.state.rev, 2500);
+  renderProject();
+});
+
+pj('pj-export').addEventListener('click', async ()=>{
+  try {
+    const { json, filename } = await project.exportProject();
+    const url = URL.createObjectURL(new Blob([json], { type:'application/json' }));
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 10000);
+    toast('Exported ' + filename, 4000);
+    renderProject();
+  } catch(e){ toast('Export failed: ' + (e.message || e), 6000); }
+});
+
+pj('pj-import').addEventListener('click', ()=>{ pjFile.value = ''; pjFile.click(); });
+pjFile.addEventListener('change', async ()=>{
+  const f = pjFile.files[0]; if (!f) return;
+  // Destructive: it replaces everything on this device. The current state goes
+  // into the undo history first, so it can be walked back.
+  if (!confirm(`Import "${f.name}"?\n\nThis replaces the settings and clips on this device. Your current state is kept in the undo history, so you can restore it.`)) return;
+  try {
+    const r = await project.importProject(await f.text());
+    applySettings(); applyCamLock(); renderMorphList();
+    toast(`Imported${r.name ? ` "${r.name}"` : ''} — ${r.clips} clip${r.clips===1?'':'s'}.`
+          + (r.avatar ? ` Load ${r.avatar.name} to match.` : '')
+          + ` Undo: restore rev ${r.restorePoint}.`, 9000);
+    renderProject();
+  } catch(e){ toast('Import failed: ' + (e.message || e), 8000); }
+});
+
+pj('pj-restore').addEventListener('click', async ()=>{
+  const rev = parseInt(pj('pj-history').value, 10);
+  if (!rev) return;
+  if (!confirm(`Restore revision ${rev}?\n\nThe current state stays in the history, so this is undoable.`)) return;
+  try {
+    await project.restore(rev);
+    applySettings(); applyCamLock(); renderMorphList();
+    renderProject();
+  } catch(e){ toast('Restore failed: ' + (e.message || e), 6000); }
 });
 
 /* ---- overlay / spinner / errors ---- */

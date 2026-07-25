@@ -20,15 +20,15 @@ moment it's resolved instead of letting it accumulate._
   slice, wires `saveSoon()` into every Tuner mutation, and adds the history ring
   (`history()`/`restore()`).
 
-  **`b90` on-device check owed:** confirm the stamp; open the Tuner, capture a
-  couple of keyframes, reload **without** pressing Save, and confirm the draft
-  and the `N-key draft` readout come back. Both clips (`asdf`, `qwer`) should
-  survive the v1→v2 migration — that path is harness- and browser-tested against
-  the exact b89 state, but it's the one touching real clip data.
+  `b91` (phase 3) adds the **Project tab**: name, save state, export/import
+  `.conbadge.json`, the undo-history restore list, and a storage readout — plus
+  an `avatar` slice holding the model's name/size by reference. This completes
+  the project-save work as scoped.
 
-  *Phase 3 (next):* Project card in the settings sheet — export/import
-  `.conbadge.json`, a restore-from-autosave list over the existing `history()`/
-  `restore()`, storage estimate, stale-export nudge.
+  **On-device checks owed:** (b90) open the Tuner, capture a couple of keyframes,
+  reload **without** pressing Save, confirm the draft and the `N-key draft`
+  readout come back, and that both clips survived the v1→v2 migration. (b91)
+  export a file, confirm it downloads, then import it back.
 
 - **Tuner single-driver fix + menu redesign** (build `b87`, working tree, not
   yet confirmed on-device). Two changes:
@@ -68,7 +68,7 @@ moment it's resolved instead of letting it accumulate._
 1. On-device confirmation of the b90 draft-survives-reload path (above), plus
    the b87 Tuner fixes (bone slider drives the avatar after a clip finishes /
    after a scrub) and the b86 auto-fade play-dim path.
-2. Project save phase 3 — export/import + Project card UI.
+2. Take a first project export as a real backup once b91 is confirmed.
 3. Idle resting-pose tuning session (see above) once the user has time to
    dial it in.
 4. Resume normal animation-tuning cadence via the Animation Tuner as new

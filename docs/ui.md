@@ -17,6 +17,7 @@ browser) and the touch-input layer in `input.js`.
 
 ### Settings sheet (`ui.js`, tabs)
 
+Five tabs: Badge, Camera, Avatar, Display, Project (see below).
 Nameplate identity (name / pronouns / tagline + visibility toggle) and a
 **Nameplate style** card (see below), background card (**Match lighting**
 toggle + 2 color pickers + 6 presets), Lighting card (see
@@ -24,6 +25,23 @@ toggle + 2 color pickers + 6 presets), Lighting card (see
 tilt-parallax toggles, keep-awake toggle, particle toggle, tail curl/lift
 sliders, camera height slider, camera lock, save-default-view, auto-return
 timeout, blendshape browser.
+
+### Project tab (`renderProject()`)
+
+A fifth tab holding four cards: **This project** (name + revision/last-saved +
+avatar reference + Save now), **Backup & transfer** (export/import
+`.conbadge.json`, with a nudge when the last export is over 14 days old or never
+happened), **Undo history** (the `history()` revision list + restore), and
+**Storage** (`navigator.storage.estimate()`). Rebuilt by `renderProject()` on
+sheet-open and on tab-select, since every value in it is live.
+
+Import and restore both `confirm()` first — they replace live state — and both
+leave the prior state in the undo history, which the toast names explicitly.
+
+Note `.field select{ width:100% }` in `index.html`: a `<select>` sizes to its
+**widest option**, so the revision labels pushed the whole sheet into horizontal
+overflow at 375px until it was constrained. Revision labels also use a compact
+date format for the same reason.
 
 ### Nameplate style (`applyPlate()` / `updatePlate()`)
 

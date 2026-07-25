@@ -94,7 +94,10 @@ async function boot(){
   // Restore cached avatar if present.
   try{
     const cached = await idbGet('avatar');
-    if (cached && cached.buffer){ await mountVRM(cached.buffer, cached.name); return; }
+    if (cached && cached.buffer){
+      project.noteAvatar(cached.name, cached.buffer.byteLength);
+      await mountVRM(cached.buffer, cached.name); return;
+    }
   }catch(e){}
   showOverlay(true, 'Con Badge', 'Pick a <b>.vrm</b> avatar to bring your badge to life. It stays on this device.', false);
 }
