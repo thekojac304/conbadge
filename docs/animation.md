@@ -10,6 +10,7 @@ the codebase.
 
 ```
 pose.clear()
+adjust.frame()         // reset this frame's ear/tail adjustment offsets
 idle.update(dt)        // breathing, blinking, gaze, knee bounce, tilt-lean
 petting.update(dt)     // sustained petting response
 gestures.update(dt)    // one random idle gesture at a time, crossfaded
@@ -39,7 +40,8 @@ the bone's own frame (see Conventions in [CLAUDE.md](../CLAUDE.md)).
   sink, periodic micro-expressions (`browUp`/`smileEyes`/`smileBig`/`glance`/
   `squintThink`), and tilt-lean response to device orientation.
 - **Gestures** (`GESTURES` map, `gestures` object) — one fires randomly every
-  8–20s, each an authored function of `(t, duration)` that writes to `pose`.
+  8–20s, each an authored function of `(t, duration)` that writes to `pose`
+  **and returns its current envelope weight** (see the contract below).
   Crossfaded in/out via an envelope; `gestures.gain` fades the whole layer to
   0 instantly when a touch reaction fires, so gestures never fight reactions.
   16 gestures exist: `wave`, `stretch`, `footShuffle`, `lookAround`,
@@ -83,13 +85,68 @@ lines ready to paste into the gesture/reaction source. Ear/tail overrides use
 synthetic keys (`ear0`, `tail0`, …) applied via `tunerAddTo()` since they
 aren't humanoid bones.
 
-The picker also has a **Base → idle** target so the always-on resting pose can
-be tuned. Selecting it sets `idle._hold` (freezes `idle.t`, so every pose sine
+The panel's **✓ Save / ↺ Revert / ✕ Clear** row writes the current pose into the
+selected animation as a per-avatar adjustment (above) — that is now the normal
+way a built-in gets tuned, with the printed deltas reserved for changes only
+source can make. See [ui.md](ui.md) for the interaction detail.
+
+The picker also has **Base → idle** and **Base → petting** targets so the
+always-on resting pose and the petting response can be tuned. Selecting it sets `idle._hold` (freezes `idle.t`, so every pose sine
 — arms/breathing/knees/tail — sits static while blink/gaze keep ticking off
 `dt`); arm-wobble damping is deliberately skipped for `kind==='idle'` so the
 *true* resting pose is on show. **Idle has no envelope, so its deltas bake raw**
 (adjust the idle base offsets / `CONFIG` constants), not `value*e` like the
 gestures/reactions — the readout header flags this.
+
+### Per-avatar animation adjustments (`adjust.js`)
+
+**The primary way built-in animations get tuned.** A stored *adjustment* is one
+static pose delta — the same `{ov:{bone:[x,y,z,twist]}, face:{morph:w}}` snapshot
+the Tuner already produces — held per animation, per avatar, in the project
+record. `adjust.apply(id, w)` adds it into the pose accumulator immediately after
+the built-in animation has written its own pose. Nothing forks, overwrites or
+rewrites a built-in: clearing an adjustment returns the animation to its source
+behaviour exactly, and improving a built-in later still carries through, because
+the delta rides on top of whatever pose the new version produces.
+
+- **Ids are the Tuner's dropdown values**: `idle:idle`, `petting:petting`,
+  `gesture:wave`, `reaction:fluster`, `reaction:wave:left`. `side` is only ever
+  set for wave, so the reaction id built in `reactions.update` matches exactly.
+- **Every layer passes its own weight `w`**, and the delta is scaled by it —
+  that's what stops a delta popping on at the animation's start and off at its
+  end. `idle` → 1 (no envelope, always on), `petting` → its energy,
+  gestures → the envelope the gesture returns × `gestures.gain`, reactions →
+  the same `e` their own offsets use. The Tuner holds at peak, so what's dialled
+  in is what shows at the animation's peak.
+- **Gesture return contract**: a gesture returns the `e` it scales itself by.
+  Adding a gesture means adding `return e;` — one that forgets falls back to a
+  default `envelope(t,dur)`, which is slightly off for a custom ease but never
+  broken. This was chosen over tracking the envelope in a module-level global:
+  an explicit return is greppable and can't get out of step with the layer.
+- **Ears/tail** aren't humanoid bones, so their offsets accumulate into
+  `adjust.nodes` during the frame and are consumed by `applyEar/TailPose` after
+  `S.vrm.update()` — the same post-update path the live Tuner and clips use.
+  `main.js` calls `adjust.frame()` next to `pose.clear()` to reset them.
+- **Per-avatar, keyed on the VRM's filename** (lower-cased, `.vrm` stripped),
+  **not its bytes** — a delta exists because *this* rig's arm is this long, and
+  re-exporting the same avatar must not orphan its tuning. Bucketing inside the
+  slice is what makes avatar switching correct while the app is still
+  single-project (`p_default`).
+- **Suppression while tuning**: `tunerHold` sets `adjust.suppress` to the held
+  id, because the Tuner has loaded that same delta into its sliders — applying
+  both would double it. Only the held animation is muted; every other
+  animation's adjustment keeps applying.
+- Face weights go through `setExpr`, so they inherit its `max()` semantics: an
+  adjustment can raise a morph above what the animation asks for, not pull one
+  below it.
+
+**Division of labour.** The app store owns what is *rig-specific* — static end
+poses, which exist because of one avatar's proportions. Source owns what is
+*rig-agnostic* — timing, speed, interpolation, stagger, follow-through, and any
+new motion, because those are wrong on every avatar or none. The Tuner's
+Copy-deltas readout is unchanged and is still the handoff for the second
+category (Path A, below). A given tweak lives in one place or the other, never
+both, or it applies twice.
 
 ### Keyframe clips — Path B, Phase 1 (`clips` in `anim.js`)
 
@@ -151,10 +208,15 @@ because keyframes weren't considered. See
 [CLAUDE.md § Animation authoring / tuning workflow](../CLAUDE.md) for the
 full agreement. Summary:
 
-- **Path A — procedural + exposed parameters (default).** Claude writes the
-  animation in code, then exposes its values as Tuner knobs. The user tunes
-  by eye and hands back deltas; Claude bakes them into the source
-  (`value*e` alongside existing envelope-scaled offsets). The user does not
+- **Path A0 — in-app per-avatar adjustment (default for static poses).** The
+  user poses the avatar in the Tuner and presses Save; the delta lands in the
+  project record and applies in normal play, with no source change, no push,
+  and no round-trip through Claude. See the adjustments section above.
+- **Path A — procedural + exposed parameters (for everything a static pose
+  can't express).** Claude writes the animation in code, then exposes its values
+  as Tuner knobs. The user tunes by eye and hands back deltas; Claude bakes them
+  into the source (`value*e` alongside existing envelope-scaled offsets). Still
+  the route for speed, timing, interpolation and new motion. The user does not
   need to know animation — mapping intent to knobs is Claude's job.
 - **Path B — keyframe clips (opt-in, not built).** Reserved for a *new*
   freehand animation that parameters genuinely can't express. Would be a
@@ -201,7 +263,19 @@ because settling to idle doesn't have the same "catching up" problem).
   partially capturable by the Tuner's static end-pose — timing, stagger, and
   follow-through don't show up in a frozen peak. Pose-dominant reactions
   (fluster, bellyRub) are ~90% captured this way; motion-dominant ones are
-  the eventual case for Path B.
+  the eventual case for Path B. This is also the ceiling on what a per-avatar
+  adjustment can fix: it's a static pose, so those gestures still come back to
+  source.
+- An adjustment **preserves the difference, not the result**. Changing a
+  built-in shifts every avatar that has a delta on it by the same amount —
+  deliberately, so improvements reach customised avatars instead of freezing
+  them at whatever the animation looked like when they were tuned. The cost is
+  that a *large* rework can leave an old delta wrong. Each adjustment records
+  the `build` it was tuned against so a "this changed since you tuned it" notice
+  is possible later; nothing auto-discards.
+- Adjusting **breathing depth, blink rate or bounce** isn't reachable this way —
+  they're amplitudes inside `idle`, not a pose offset. Those need either a
+  source change or a curated set of named knobs backed by `CONFIG`.
 - `gestures.update()` temporarily monkey-patches `pose.add`/`pose.twist` to
   scale by `gestures.gain` — this works but means the gesture functions
   themselves are unaware of the fade; a bug in the wrapper would silently

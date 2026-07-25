@@ -2,6 +2,7 @@
 import { THREE, S, rig, settings, scene, hooks, toast, showOverlay, showError, MANAGED } from './core.js';
 import { CONFIG } from './config.js';
 import { summary as projectSummary } from './project.js';
+import { adjust } from './adjust.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { frameCamera } from './camera.js';
@@ -491,7 +492,7 @@ async function mountVRM(buffer, filename){
     (lookInfo?`\n${lookInfo}`:'')+
     // Save state last: this readout replaces any toast raised during boot (both
     // write to #diag), so project.js's own messages would otherwise never be seen.
-    `\n${projectSummary()}`;
+    `\n${projectSummary()}${adjust.summary()}`;
   toast(info, 9000);
   console.log('[conbadge]', info.replace(/\n/g,' | '), rig.morphs);
   hooks.onAvatarLoaded?.();

@@ -6,6 +6,7 @@ import * as project from './project.js';
 import { pose, flushExpr } from './pose.js';
 import { idle, gestures, reactions, petting, particles, applyTailPose, applyEarPose,
          decayImpulses, applyHipsDrop, clips } from './anim.js';
+import { adjust } from './adjust.js';
 import { clampCameraTarget, applyView, updateParallax, renderScene } from './camera.js';
 import { initLights, updateLights } from './light.js';
 import { updateZoneDebug, updateTrail } from './input.js';
@@ -34,6 +35,7 @@ function loop(){
 
   if (S.vrm){
     pose.clear();
+    adjust.frame();               // reset this frame's ear/tail adjustment offsets
     idle.update(dt);
     petting.update(dt);
     gestures.update(dt);

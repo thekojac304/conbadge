@@ -57,9 +57,20 @@ changes — no cache-clearing needed.
 
 Animations stay **procedural (code)** — this is the default and is not to be
 converted to keyframes wholesale (that would risk degrading the existing feel;
-the user is rightly cautious about it). Two paths, chosen deliberately:
+the user is rightly cautious about it). Three paths, chosen deliberately:
 
-- **Path A — procedural + exposed parameters (default, low-risk).** Claude
+- **Path A0 — in-app per-avatar adjustment (default for static poses, `b94`).**
+  The user poses the avatar in the Tuner and presses **Save**; the delta is
+  stored per-avatar in the project record and layered onto the built-in at
+  runtime. **Claude is not involved** — no source change, no push, no round
+  trip. This is now where "the paw should sit further back on this rig" belongs.
+  The split that governs it: **static end poses are rig-specific** (they exist
+  because of one avatar's proportions) and go in the app store; **timing, speed,
+  interpolation and new motion are rig-agnostic** and go in source via Path A.
+  A given tweak lives in one place or the other, never both — or it applies
+  twice. See [docs/animation.md](docs/animation.md).
+
+- **Path A — procedural + exposed parameters (for what A0 can't express).** Claude
   writes the animation in code, then exposes its meaningful values (pose deltas,
   timing, amplitudes) so the user can fine-tune them live. This is the
   `flusterDebug` pattern generalized, and the **Animation Tuner** (in `ui.js`,

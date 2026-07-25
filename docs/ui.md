@@ -148,6 +148,26 @@ specifics:
 - Selecting a new animation calls `tunerHold()`, which freezes it at 50% of
   its duration (past the ease-in, sitting at full pose) with internal time
   paused.
+- **Per-avatar adjustment row** (`#tn-adj-status` + `✓ Save` / `↺ Revert` /
+  `✕ Clear`, directly under the animation dropdown). Save writes the current
+  pose into the selected animation for the **loaded avatar**, so it applies in
+  normal play and comes back on load; Clear returns that animation to its
+  built-in; Revert reloads the saved delta over unsaved slider work. Status
+  reads `built-in default` or `adjusted for this avatar · N bones`, and adjusted
+  animations get a `✎` in the dropdown (`markAdjusted()` stashes each option's
+  original label in `dataset.base`). See
+  [animation.md § Per-avatar animation adjustments](animation.md).
+  - **Selecting an animation loads its stored delta into the sliders**
+    (`holdCurrent()` → `loadAdjust()`), and `anim.js` mutes that same delta
+    while it's held — so the sliders always show the animation's *total* pose
+    and nothing is applied twice. The consequence is that switching the
+    animation dropdown **replaces** the slider pose instead of carrying it
+    across, which is a behaviour change for keyframe-clip authoring; a `dirty`
+    flag raises a toast rather than discarding unsaved work silently.
+  - Saving an all-zero pose clears instead of storing an empty adjustment, so
+    "zero everything and Save" and "Clear" mean the same thing.
+  - Save with no avatar loaded is refused with a toast — there'd be no key to
+    file it under.
 - **Auto-fade while adjusting** (`.tn-dim`): the whole Tuner UI (panel + the
   `#kf-bar`) fades to `opacity:.16` while a slider is being dragged, while
   scrubbing the timeline, or while a clip plays — so the avatar is visible

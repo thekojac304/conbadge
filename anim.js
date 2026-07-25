@@ -2,6 +2,7 @@
 import { THREE, S, rig, settings, scene, rand, motion, hooks } from './core.js';
 import { CONFIG } from './config.js';
 import * as project from './project.js';
+import { adjust } from './adjust.js';
 import { pose, setExpr, envelope, armBase, armReach, scratchTarget, anchorWorld } from './pose.js';
 
 const idle = {
@@ -171,6 +172,11 @@ const idle = {
       setExpr('blink', Math.max(0, Math.min(1, w)) * CONFIG.BLINK_MAX * petEase);
       if (this.blinkT>=D){ this.blinkT=-1; this.blinkIn=rand(2,5); }
     }
+
+    // Per-avatar adjustment for the resting pose. Idle has no envelope — it's
+    // always on at full strength — so its delta applies raw (weight 1), which is
+    // the same rule that governs baking idle deltas into the source constants.
+    adjust.apply('idle:idle', 1);
   }
 };
 
@@ -179,6 +185,12 @@ const idle = {
    Each returns its effect through the pose accumulator, scaled by an envelope
    so it eases in and out. `gestureGain` fades the whole layer out instantly
    when a touch reaction fires, so gestures never fight reactions.
+
+   CONTRACT: a gesture RETURNS its current envelope weight (the `e` it scales
+   its own offsets by). gestures.update() feeds that to adjust.apply() so a
+   stored per-avatar delta fades in and out with the gesture instead of popping
+   on at t=0. A gesture that returns nothing falls back to a default envelope —
+   slightly off for gestures with custom eases, never broken.
    =========================================================================== */
 const GESTURES = {
   // IMPORTANT: these are DELTAS from the resting pose, not absolute angles.
@@ -200,6 +212,7 @@ const GESTURES = {
     // forearm at its root is what pinches the mesh at the elbow.
     pose.twist('rightLowerArm', P*0.3*e);
     pose.twist('rightHand',     P*0.7*e);
+    return e;
   },
   // A real stretch isn't symmetric and isn't a hold — the arms lead with bent
   // elbows, unfold near the top, and arrive slightly apart in time.
@@ -234,6 +247,7 @@ const GESTURES = {
     pose.add('leftLowerLeg',  -0.14*body, 0, 0);
     pose.add('rightLowerLeg', -0.14*body, 0, 0);
     setExpr('smileEyes', 0.35*body);
+    return body;                                          // arms have their own offset envelopes
   },
   footShuffle(t,d){ const e=envelope(t,d,0.15); const s=Math.sin(t*3.0);  // ein default 0.2->0.15: 0.68s->0.51s
     const up = Math.max(0,s), dn = Math.max(0,-s);
@@ -246,13 +260,16 @@ const GESTURES = {
     pose.add('leftLowerLeg',   dn*0.68*e, 0, 0);
     pose.add('leftFoot',      -dn*0.28*e, 0, 0);
     pose.add('spine', 0, s*0.03*e, 0);
+    return e;
   },
   lookAround(t,d){ const e=envelope(t,d,0.15,0.3); const s=Math.sin(t*1.4);  // ein 0.3->0.15: 1.08s->0.54s
     pose.add('neck',0, s*0.5*e, 0); pose.add('head',0, s*0.35*e, s*0.08*e);
     pose.add('chest',0, s*0.12*e, 0);
+    return e;
   },
   headTilt(t,d){ const e=envelope(t,d,0.18,0.4);     // ein 0.35->0.18: 0.91s->0.47s to tilt
     pose.add('head',0,0.05*e, 0.5*e); pose.add('neck',0,0,0.22*e);
+    return e;
   },
 
   // Head scratch: the paw position is SOLVED (see armReach) so it lands beside
@@ -280,6 +297,7 @@ const GESTURES = {
     pose.add('head', 0.04*e, -0.09*e, -0.12*e);      // leans into it
     pose.add('neck', 0, -0.05*e, -0.06*e);
     earImpulse = Math.max(earImpulse, 0.4*e);
+    return e;
   },
 
   // The full-body dog shake. Fast alternating twist that travels head→hips.
@@ -292,6 +310,7 @@ const GESTURES = {
     pose.add('hips',  0, f3*0.07*e, 0);
     gestureTail = Math.max(gestureTail, 0.5*e);
     earImpulse  = Math.max(earImpulse, 0.9*e);
+    return e;
   },
 
   // Shift weight onto one hip and settle — a casual standing reset.
@@ -302,6 +321,7 @@ const GESTURES = {
     pose.add('head',  0, 0,       0.05*e);
     pose.add('leftUpperLeg',  0.05*e, 0, 0);
     pose.add('rightLowerLeg', 0.14*e, 0, 0);
+    return e;
   },
 
   // Dip the muzzle and take a couple of quick sniffs.
@@ -310,12 +330,14 @@ const GESTURES = {
     pose.add('neck', 0.11*e, 0.04*e, 0);
     pose.add('chest', 0.04*e, 0, 0);
     earImpulse = Math.max(earImpulse, 0.25*e);
+    return e;
   },
 
   // Lazy tail swish with a small counter-balance in the hips.
   tailSwish(t,d){ const e=envelope(t,d,0.15,0.35);   // ein 0.3->0.15: 1.02s->0.51s
     gestureTail = Math.max(gestureTail, 1.0*e);
     pose.add('hips', 0, Math.sin(t*2.2)*0.035*e, 0);
+    return e;
   },
 
   // ---- leg gestures -------------------------------------------------------
@@ -327,6 +349,7 @@ const GESTURES = {
     pose.add('hips',  0, 0, -0.06*e);           // weight onto the other leg
     pose.add('leftLowerLeg', 0.10*e, 0, 0);
     pose.add('head', 0.06*e, -0.10*e, 0.07*e);  // peeks at it
+    return e;
   },
 
   // Idle toe tapping — one foot, quick repeated taps.
@@ -334,6 +357,7 @@ const GESTURES = {
     pose.add('rightFoot',     -0.40*s*e, 0, 0);
     pose.add('rightLowerLeg',  0.22*s*e, 0, 0);
     pose.add('hips', 0, 0, -0.03*e);
+    return e;
   },
 
   // Rise onto the toes and settle back — uses the hips channel so the whole
@@ -345,6 +369,7 @@ const GESTURES = {
     pose.add('leftLowerLeg',  -0.20*e, 0, 0);
     pose.add('rightLowerLeg', -0.20*e, 0, 0);
     pose.add('spine', -0.05*e); pose.add('head', -0.07*e);
+    return e;
   },
 
   // Stretch one leg out and roll the ankle.
@@ -354,6 +379,7 @@ const GESTURES = {
     pose.add('leftFoot',      0.32*e, r*0.18*e, 0);   // ankle circles
     pose.add('hips',  0, 0, 0.06*e);
     pose.add('spine', 0, 0,-0.04*e);
+    return e;
   },
 
   // Quick playful blep. The tongue leads, then the head tilts into it — doing
@@ -367,12 +393,14 @@ const GESTURES = {
     pose.add('head', 0.06*e, Math.sin(t*2.6)*0.06*e, 0.15*e);   // tilt + slow sway
     pose.add('neck', 0.03*e, 0, 0.07*e);
     earImpulse = Math.max(earImpulse, 0.45*e);
+    return e;
   },
 
   // Just the ears — small enough to fire often without being distracting.
   earFlick(t,d){ const e=envelope(t,d,0.2,0.3);
     earImpulse = Math.max(earImpulse, 1.0*e);
     pose.add('head', 0, Math.sin(t*6)*0.05*e, 0.04*e);
+    return e;
   },
 };
 const GESTURE_LIST = Object.keys(GESTURES);
@@ -399,8 +427,13 @@ const gestures = {
         const add = pose.add.bind(pose), tw = pose.twist.bind(pose);
         pose.add   = (b,x=0,y=0,z=0,w=1)=> add(b,x,y,z,w*this.gain);
         pose.twist = (b,x=0,w=1)=> tw(b,x,w*this.gain);
-        GESTURES[this.cur](this.t, this.dur);
+        const env = GESTURES[this.cur](this.t, this.dur);
         pose.add = add; pose.twist = tw;
+        // Per-avatar delta, applied OUTSIDE the gain wrapper with the gain folded
+        // into the weight — so the ear/tail part (which isn't a pose write) is
+        // scaled identically to the bone part.
+        adjust.apply('gesture:'+this.cur,
+          (typeof env === 'number' ? env : envelope(this.t, this.dur)) * this.gain);
       }
     } else if (!reactions.active){
       this.next -= dt;
@@ -441,6 +474,7 @@ function applyEarPose(time){
     rig.ears[i].quaternion.copy(rig.earsRest[i]).multiply(_tq);
     if (tuner.active)   nodeAddOffset(rig.ears[i], tuner.overrides['ear'+i]);   // live Tuner
     if (clips.playing)  nodeAddOffset(rig.ears[i], clips.cur.ov['ear'+i]);      // clip playback
+    nodeAddOffset(rig.ears[i], adjust.nodes['ear'+i]);                          // per-avatar adjustment
   }
 }
 
@@ -518,6 +552,7 @@ function applyTailPose(time){
     rig.tail[i].quaternion.copy(rig.tailRest[i]).multiply(_tq);
     if (tuner.active)   nodeAddOffset(rig.tail[i], tuner.overrides['tail'+i]);   // live Tuner
     if (clips.playing)  nodeAddOffset(rig.tail[i], clips.cur.ov['tail'+i]);      // clip playback
+    nodeAddOffset(rig.tail[i], adjust.nodes['tail'+i]);                          // per-avatar adjustment
   }
 }
 
@@ -607,7 +642,7 @@ const particles = {
    and out instead of snapping on and off.
    =========================================================================== */
 const petting = {
-  energy: 0, active: false, heartT: 0, pos: new THREE.Vector3(), zone: null,
+  energy: 0, active: false, heartT: 0, pos: new THREE.Vector3(), zone: null, _hold: false,
   feed(dist, point, zone){
     this.energy = Math.min(1, this.energy + dist * CONFIG.PET_GAIN);
     this.active = true;
@@ -615,11 +650,12 @@ const petting = {
     if (point) this.pos.copy(point);
   },
   update(dt){
-    if (!this.active) this.energy = Math.max(0, this.energy - dt*CONFIG.PET_DECAY);
+    // The Tuner can hold petting at full strength (_hold) so its response pose
+    // can be adjusted without a finger on the screen.
+    if (!this.active && !this._hold) this.energy = Math.max(0, this.energy - dt*CONFIG.PET_DECAY);
     this.active = false;                                // re-asserted by pointermove
-    if (this.energy <= 0.02) return;
-
-    const e = this.energy;
+    const e = this._hold ? 1 : this.energy;
+    if (e <= 0.02) return;
     setExpr('happy',     0.85*e);
     setExpr('smile',     0.80*e);
     setExpr('smileEyes', CONFIG.PET_EYES*e);
@@ -628,13 +664,17 @@ const petting = {
     pose.add('chest', -0.03*e, 0, 0);
     earImpulse = Math.max(earImpulse, 0.25*e);
 
-    if (settings.particles !== false){
+    // No hearts while the Tuner holds it: `pos` is the last real touch point,
+    // which is stale (or the origin) when nobody is petting.
+    if (settings.particles !== false && !this._hold){
       this.heartT -= dt;
       if (this.heartT <= 0 && e > 0.35){
         this.heartT = CONFIG.HEART_RATE;
         particles.spawn(this.pos, 1, 'heart', 0xff6f9c);
       }
     }
+
+    adjust.apply('petting:petting', e);
   }
 };
 
@@ -824,6 +864,11 @@ const reactions = {
       setExpr('happy', 0.5*e);
     }
 
+    // Per-avatar delta for this reaction, scaled by the same envelope its own
+    // offsets use. `side` is only ever set for wave, so the id matches the
+    // Tuner's dropdown values exactly ('reaction:happy', 'reaction:wave:left').
+    adjust.apply('reaction:' + this.kind + (this.side ? ':'+this.side : ''), e);
+
     if (t>=d && !this._hold){ this.clear(); }
   }
   // NOTE: tail and ear motion during reactions is handled by applyTailPose()
@@ -863,10 +908,16 @@ function tunerHold(kind, name){
   // stop whatever's playing, then hold the requested animation frozen at peak
   gestures.cur = null; gestures._hold = false; gestures.gainTarget = 1;
   reactions._hold = false; reactions.clear();
-  idle._hold = false;
+  idle._hold = false; petting._hold = false;
   tuner.active = true; tuner.kind = kind; tuner.name = name;
+  // Mute this animation's stored per-avatar delta while it's being tuned: the
+  // Tuner has loaded that same delta into its sliders, so applying both would
+  // double it. The sliders therefore always show the TOTAL adjustment.
+  adjust.suppress = kind + ':' + name;
   if (kind === 'idle'){
     idle._hold = true;                   // freeze the always-on base pose
+  } else if (kind === 'petting'){
+    petting._hold = true;                // hold the petting response at full energy
   } else if (kind === 'reaction'){
     const [k, side] = name.split(':');
     reactions.fire(k, side);
@@ -884,6 +935,8 @@ function tunerRelease(){
   gestures._hold = false; gestures.cur = null; gestures.gainTarget = 1; gestures.next = rand(4,9);
   reactions._hold = false; reactions.clear();
   idle._hold = false;
+  petting._hold = false; petting.energy = 0;
+  adjust.suppress = null;                // stored deltas apply again in normal play
 }
 function applyTuner(){
   if (!tuner.active) return;

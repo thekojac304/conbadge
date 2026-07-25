@@ -15,7 +15,7 @@ conventions that would otherwise have to be rediscovered the hard way.
 |---|---|---|
 | [current-focus.md](current-focus.md) | Active work, blockers, next priorities | **Always** — first thing every session |
 | [architecture.md](architecture.md) | Module structure, dependency flow, `S`/`hooks`/`rig` shared state | Any cross-module change, adding a new module, "where does X live" |
-| [animation.md](animation.md) | Pose pipeline, idle/gestures/reactions, Animation Tuner, keyframe clips (Path B) | Touching `anim.js`, `pose.js`, any gesture/reaction/pose work |
+| [animation.md](animation.md) | Pose pipeline, idle/gestures/reactions, Animation Tuner, per-avatar adjustments, keyframe clips (Path B) | Touching `anim.js`, `pose.js`, `adjust.js`, any gesture/reaction/pose work |
 | [rendering.md](rendering.md) | VRM load, mesh repair, morph pruning at load time, camera framing/IK, backdrop | Touching `avatar.js`, `camera.js`, avatar-load behavior, backdrop/parallax |
 | [lighting.md](lighting.md) | The "Look" lighting/shading system | Touching `light.js`, MToon materials, brightness/rim/Look controls |
 | [ui.md](ui.md) | Settings sheet, modes, test bar, Tuner UI, nameplate, touch input | Touching `ui.js`, `input.js`, any settings-sheet or touch-interaction work |

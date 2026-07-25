@@ -7,6 +7,7 @@ import * as project from './project.js';
 import { mountVRM } from './avatar.js';
 import { frameCamera, currentView, applyView, saveCamOffset, frameTarget } from './camera.js';
 import { gestures, reactions, petting, GESTURE_LIST, tuner, tunerHold, tunerRelease, clips } from './anim.js';
+import { adjust } from './adjust.js';
 import { LOOK_LIST, applyLightRig, applyLook, lookBackground } from './light.js';
 
 
@@ -401,11 +402,21 @@ const BG_PRESETS = [
       '<button id="tn-close" style="background:none;border:0;color:#9fb3d9;font-size:16px;cursor:pointer">✕</button>'+
     '</div>'+
     '<label style="display:block;margin-bottom:2px;color:#9fb3d9">Animation</label>'+
-    `<select id="tn-anim" style="margin-bottom:8px">`+
-      `<optgroup label="Base"><option value="idle:idle">idle — resting pose</option></optgroup>`+
+    `<select id="tn-anim" style="margin-bottom:6px">`+
+      `<optgroup label="Base"><option value="idle:idle">idle — resting pose</option>`+
+        `<option value="petting:petting">petting — response</option></optgroup>`+
       `<optgroup label="Gestures">${optList(GESTURE_LIST,'gesture')}</optgroup>`+
       `<optgroup label="Reactions">${optList(REACTIONS,'reaction')}</optgroup>`+
     `</select>`+
+    // Per-avatar adjustment: Save writes the current pose into this animation for
+    // THIS avatar (project record), so it applies in normal play and comes back on
+    // load. Clear returns the animation to its built-in source behaviour.
+    '<div style="margin-bottom:9px">'+
+      '<div id="tn-adj-status" style="color:#8090a8;margin-bottom:4px">built-in default</div>'+
+      '<div style="display:flex;gap:6px">'+
+        btn('tn-adj-save','✓ Save','flex:1;')+ btn('tn-adj-revert','↺ Revert')+ btn('tn-adj-clear','✕ Clear')+
+      '</div>'+
+    '</div>'+
     '<label style="display:block;margin-bottom:2px;color:#9fb3d9">Bone / joint</label>'+
     // ===== REMOVABLE (picker): body-region filter chips ==============
     // Pure sugar: clicking a chip just narrows the SAME select below (via
@@ -511,6 +522,10 @@ const BG_PRESETS = [
 
   // REMOVABLE (picker): which diagram region is narrowing the list, if any.
   let activeGroup = null;
+  // Which animation the sliders currently hold, and whether they've been moved
+  // since the adjustment was last loaded/saved — used only to warn before a
+  // switch throws unsaved work away.
+  let heldId = null, dirty = false;
 
   // Build the bone dropdown from the LOADED rig, grouped + filtered.
   function buildBones(){
@@ -581,6 +596,7 @@ const BG_PRESETS = [
       s.addEventListener('input', ev=>{
         tuner.face[m] = parseFloat(ev.target.value);
         v.textContent = tuner.face[m].toFixed(2);
+        dirty = true;
         readout();
         project.saveSoon('tuner-face');
       });
@@ -620,6 +636,7 @@ const BG_PRESETS = [
       if (!cur()) return;
       ov(cur())[i] = parseFloat(ev.target.value);
       el('tn-v-'+ax).textContent = (ov(cur())[i]>=0?' ':'') + ov(cur())[i].toFixed(2);
+      dirty = true;
       readout();
       // Debounced, so a slider drag writes once after it settles, not per frame.
       project.saveSoon('tuner-pose');
@@ -638,9 +655,14 @@ const BG_PRESETS = [
   // ===== end removable wiring =====
   // Switching the held animation must also stop any clip playback, or both would
   // drive the pose at once — enterPose() re-holds the newly selected animation.
-  el('tn-anim').addEventListener('change', enterPose);
-  el('tn-zero').addEventListener('click', ()=>{ if(cur()){ tuner.overrides[cur()] = [0,0,0,0]; refresh(); project.saveSoon('tuner-zero'); } });
-  el('tn-reset').addEventListener('click', ()=>{ tuner.overrides = {}; tuner.face = {}; buildFace(); refresh(); project.saveSoon('tuner-reset'); });
+  el('tn-anim').addEventListener('change', ()=>{
+    // Switching loads the new animation's adjustment over the sliders, so say so
+    // if that just threw away unsaved work rather than losing it silently.
+    if (dirty && heldId) toast(`Unsaved changes to ${heldId.split(':').slice(1).join(':')} discarded`, 2400);
+    enterPose();
+  });
+  el('tn-zero').addEventListener('click', ()=>{ if(cur()){ tuner.overrides[cur()] = [0,0,0,0]; dirty = true; refresh(); project.saveSoon('tuner-zero'); } });
+  el('tn-reset').addEventListener('click', ()=>{ tuner.overrides = {}; tuner.face = {}; dirty = true; buildFace(); refresh(); project.saveSoon('tuner-reset'); });
 
   // Mirror every override on one side to the other. Across the sagittal plane
   // the world-aligned bones negate Y, Z and the axial twist; X carries over.
@@ -651,7 +673,7 @@ const BG_PRESETS = [
       const o = tuner.overrides[b]; if (!o) continue;
       tuner.overrides[to + b.slice(from.length)] = [o[0]||0, -(o[1]||0), -(o[2]||0), -(o[3]||0)];
     }
-    refresh(); project.saveSoon('tuner-mirror');
+    dirty = true; refresh(); project.saveSoon('tuner-mirror');
   }
   el('tn-mirror-lr').addEventListener('click', ()=>mirror('left'));
   el('tn-mirror-rl').addEventListener('click', ()=>mirror('right'));
@@ -660,6 +682,65 @@ const BG_PRESETS = [
     try { navigator.clipboard.writeText(out.value); } catch(e){}
     try { document.execCommand('copy'); } catch(e){}
     toast('Deltas copied', 1400);
+  });
+
+  /* ---- Per-avatar adjustments -------------------------------------------
+     The sliders ARE the adjustment editor: selecting an animation loads its
+     stored delta into them (and anim.js mutes that delta while it's held, so
+     nothing is applied twice), Save writes them back for the loaded avatar.
+     The Copy-deltas readout above is unchanged, so handing values over to be
+     baked into source is still available for anything a static pose can't
+     express (speed, timing, new motion). See docs/animation.md. */
+  const adjId   = () => el('tn-anim').value;              // ids ARE the dropdown values
+  const adjName = () => adjId().split(':').slice(1).join(':');
+
+  // Mark adjusted animations in the dropdown so it's obvious which ones this
+  // avatar has customised, without opening each one.
+  function markAdjusted(){
+    for (const o of el('tn-anim').options){
+      if (!o.dataset.base) o.dataset.base = o.textContent;
+      o.textContent = o.dataset.base + (adjust.has(o.value) ? '  ✎' : '');
+    }
+  }
+  function adjStatus(){
+    const st = el('tn-adj-status'), a = adjust.get(adjId());
+    if (!a){ st.textContent = 'built-in default'; st.style.color = '#8090a8'; return; }
+    const nb = Object.keys(a.ov||{}).length, nf = Object.keys(a.face||{}).length;
+    st.textContent = `adjusted for this avatar · ${nb} bone${nb===1?'':'s'}`
+                   + (nf ? ` · ${nf} morph${nf===1?'':'s'}` : '');
+    st.style.color = '#8fd0ff';
+  }
+  // Load the stored delta into the sliders. This is what makes the panel show the
+  // TOTAL adjustment for the held animation rather than an empty scratch pose.
+  function loadAdjust(){
+    const a = adjust.get(adjId());
+    tuner.overrides = {}; tuner.face = {};
+    if (a){
+      for (const b in a.ov) tuner.overrides[b] = a.ov[b].slice(0,4);
+      for (const m in a.face) tuner.face[m] = a.face[m];
+    }
+    heldId = adjId(); dirty = false;
+    buildFace(); refresh(); markAdjusted(); adjStatus();
+  }
+
+  el('tn-adj-save').addEventListener('click', ()=>{
+    if (!adjust.key()){ toast('Load an avatar first', 1800); return; }
+    const name = adjName(), stored = adjust.set(adjId(), snapshot());
+    dirty = false; markAdjusted(); adjStatus();
+    toast(stored ? `Saved to ${name} for this avatar`
+                 : `${name} is back to its built-in (nothing to save)`, 1900);
+  });
+  el('tn-adj-revert').addEventListener('click', ()=>{
+    const had = adjust.has(adjId());
+    loadAdjust();
+    toast(had ? 'Reverted to the saved adjustment' : 'Reverted to the built-in', 1500);
+  });
+  el('tn-adj-clear').addEventListener('click', ()=>{
+    const name = adjName();
+    if (!adjust.has(adjId())){ toast(`${name} is already at its built-in`, 1500); return; }
+    adjust.clear(adjId());
+    loadAdjust();
+    toast(`${name} back to its built-in`, 1900);
   });
 
   /* ---- Keyframes / clips (Phase 2: visual timeline) ---- */
@@ -715,7 +796,9 @@ const BG_PRESETS = [
     el('kf-lib').innerHTML = Object.keys(lib).map(n=>`<option value="${n}">${n}</option>`).join('')
       || '<option value="">(no saved clips)</option>';
   }
-  function holdCurrent(){ const [kind, ...rest] = el('tn-anim').value.split(':'); tunerHold(kind, rest.join(':')); refresh(); }
+  // Hold the selected animation and load ITS stored adjustment into the sliders,
+  // so the panel always shows the pose that animation actually has on this avatar.
+  function holdCurrent(){ const [kind, ...rest] = el('tn-anim').value.split(':'); tunerHold(kind, rest.join(':')); loadAdjust(); }
   // The single "sliders are live" transition. Stops any clip playback/preview and
   // re-holds the selected animation so the Tuner (applyTuner) is the ONE driver.
   // Every path that finishes playing/scrubbing/switching routes through here, so
@@ -867,9 +950,7 @@ const BG_PRESETS = [
       updatePlayBtn();
       kfBar.style.display = 'block';
       if (testBarEl) testBarEl.style.display = 'none';   // free the bottom edge for the clip bar
-      const [kind, ...rest] = el('tn-anim').value.split(':');
-      tunerHold(kind, rest.join(':'));
-      refresh();
+      holdCurrent();          // hold the animation + load its stored adjustment
     } else {
       clips.stop();
       if (rafId){ cancelAnimationFrame(rafId); rafId = 0; }

@@ -11,7 +11,7 @@ copy). Files sit at the repo root (not in a `js/` subfolder — see
 Dependency flow is one-directional, no cycles:
 
 ```
-config → core → project → light/pose → camera → anim → avatar/input → ui → main
+config → core → project → light/pose → adjust → camera → anim → avatar/input → ui → main
 ```
 
 | File | Role |
@@ -21,6 +21,7 @@ config → core → project → light/pose → camera → anim → avatar/input 
 | `project.js` | Versioned project record, slice registry, autosave, migrations |
 | `light.js` | Lighting/shading "Look" system: light rig, tone mapping, MToon treatment |
 | `pose.js` | `PoseAccumulator`, expression driver, arm IK, `anchorWorld` |
+| `adjust.js` | Per-avatar animation adjustments: stored pose deltas layered onto the built-ins |
 | `camera.js` | Framing, saved views, pan clamp, parallax, `renderScene`, `skeletonBox` |
 | `anim.js` | Idle, gestures, tail/ears, particles, petting, reactions, `applyHipsDrop` |
 | `avatar.js` | VRM load, mesh repair, morph pruning, rig measurement |
@@ -29,7 +30,11 @@ config → core → project → light/pose → camera → anim → avatar/input 
 | `main.js` | Frame loop + boot sequence |
 
 `light.js` and `pose.js` sit at the same dependency depth: both import only
-`config` + `core`, so neither creates a cycle with the other.
+`config` + `core`, so neither creates a cycle with the other. `adjust.js` sits
+just above `pose.js` (it imports `config` + `project` + `pose` and nothing else):
+`anim.js` applies it and `ui.js` edits it, so it has to stay below both, and
+being self-contained means deleting the file plus its call sites removes the
+feature — the same removability property `light.js` was given.
 
 ## Design philosophy
 

@@ -8,6 +8,25 @@ moment it's resolved instead of letting it accumulate._
 
 ## Active work
 
+- **Per-avatar animation adjustments** (`b94`, new `adjust.js`) — built-in
+  animations can now be tuned entirely in-app: pose in the Tuner, press **Save**,
+  and the delta is stored per-avatar in the project record and layered onto the
+  built-in at runtime. Design and the source-vs-store split are in
+  [animation.md](animation.md); UI detail in [ui.md](ui.md).
+
+  Verified in-sandbox (73 assertions): all 16 gestures return their envelope;
+  a delta moves each bone by exactly its value and rides the envelope; the held
+  animation is suppressed (no doubling) while others still apply; per-avatar
+  isolation both ways incl. a re-export (same name, new bytes); Clear restores
+  every bone to its built-in value; slice round-trips through save/load with
+  deep-copy isolation. UI loop verified live in-browser (save → status + `✎`
+  marker → switch → switch back → clear).
+
+  **On-device checks owed:** with KOJAC loaded, adjust `scratchHead` (or `idle`),
+  Save, close the Tuner and confirm the change shows in normal play; reload and
+  confirm it comes back (the readout gains `· N anim tweaks`); Clear and confirm
+  the original animation returns.
+
 - **Project save system** — phases 1–2 shipped (`b88`–`b90`); design and
   rationale in [persistence.md](persistence.md). `b88` added `project.js` (the
   versioned record, slice registry, rev reconciliation, autosave, migrations,
@@ -111,11 +130,11 @@ moment it's resolved instead of letting it accumulate._
 
 ## Blocked / pending
 
-- **Idle resting-pose tuning.** The Tuner's **Base → idle** target
-  (see [animation.md § Animation Tuner](animation.md)) is wired and ready.
-  User still owes: tuned resting arm/hand position deltas from dialing it
-  live. Bake as **raw** values (no `*e` — idle has no envelope), into the
-  idle base offsets / relevant `CONFIG` constants.
+- **Idle resting-pose tuning.** The Tuner's **Base → idle** target is wired and
+  ready. As of `b94` this no longer needs to come back to Claude: dial it live
+  and press **Save**, and it's stored for that avatar. Only promote it into
+  source (raw values, no `*e` — idle has no envelope) if the correction turns
+  out to be right for *every* avatar rather than KOJAC specifically.
 
 ## Next priorities
 
@@ -124,9 +143,10 @@ moment it's resolved instead of letting it accumulate._
    after a scrub) and the b86 auto-fade play-dim path.
 2. Take a first project export as a real backup once b91 is confirmed.
 3. Idle resting-pose tuning session (see above) once the user has time to
-   dial it in.
+   dial it in — now a Save in the app, not a handover.
 4. Resume normal animation-tuning cadence via the Animation Tuner as new
-   gesture/reaction requests come in.
+   gesture/reaction requests come in. Static poses are the user's to save;
+   Claude's share is speed/timing/interpolation and new motion.
 
 ---
 

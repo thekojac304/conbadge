@@ -76,11 +76,20 @@ Registered today:
 | `avatar` v1 | `project.js` via `noteAvatar()` | `{name, size}` — a **reference**, never the model |
 | `clips` v2 | `anim.js` | `{library, editKeys, editName, editLoop}` |
 | `tuner` v1 | `anim.js` | `{overrides, face}` |
+| `animAdjust` v1 | `adjust.js` | `{avatars:{[key]:{[animId]:{ov,face,build,at}}}}` |
 
 `clips` carries **`editKeys` — the clip being authored** — not just the saved
 library, which is what makes an in-progress clip survive a reload. `tuner`
 deliberately stores only the dialled-in deltas, **not** `kind`/`name`: reopening
 the app shouldn't leave an animation held frozen.
+
+`animAdjust` is bucketed **by avatar** (VRM filename, lower-cased, `.vrm`
+stripped — *not* the bytes, so a re-export keeps its tuning). The app is still
+single-project, so this bucket is what keeps one avatar's pose corrections off
+another's; if multiple named projects ever land, a project holding one avatar
+just has one bucket. See
+[animation.md § Per-avatar animation adjustments](animation.md) for why these
+deltas can't live in source.
 
 Every mutation path in the Tuner UI (capture, retime, update, dup, delete, load,
 save, name/loop, and the bone/face sliders) calls `project.saveSoon()`. Nothing
