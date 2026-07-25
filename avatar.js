@@ -11,6 +11,7 @@ import { applyLook } from './light.js';
 let meshDiag = [];
 let morphInfo = '';
 let attachedInfo = '';
+let skinInfo = '';
 let lookInfo = '';
 
 // Priority lists so we degrade gracefully across VRM 0.x / 1.0 + custom names.
@@ -124,34 +125,73 @@ function attachLooseMeshes(v){
 
    "Live" bone = the humanoid drives it: it's a raw humanoid bone node, or it
    descends from one (in a correctly merged rig every bone descends from hips).
-   For a mesh with dead bones we also count how many of those have a same-named
-   counterpart in the live skeleton — that's how retargetable it would be.
+   For a mesh with dead bones we also count how retargetable they are — how many
+   have a counterpart in the live skeleton, matched two ways:
+     `>N` exact  — same name once `.001`/copy suffixes are stripped.
+     `~N` loose  — one soft name (alphanumerics only) contains the other, which
+                   catches the Unity outfit-merge convention of prefixing or
+                   suffixing the copied bone (`Sweatshirt_Chest`, `Chest.ULTRA`).
+   A sample of the dead names + what they matched goes into the readout too:
+   the naming scheme is what decides whether a rebind can preserve the garment's
+   real skinning or has to fall back to nearest-bone-by-position.
 --------------------------------------------------------------------------- */
 const baseBoneName = n => (n||'').replace(/\.\d+$/,'').replace(/[\s_-]*(copy|clone)$/i,'').toLowerCase();
+const softBoneName = n => (n||'').toLowerCase().replace(/[^a-z0-9]/g,'');
 
 function auditSkinning(v, entries){
+  skinInfo = '';
   const driven = new Set(Object.values(rig.raw||{}));
   if(!driven.size) return;
   const isLive = (b)=>{ let p=b; while(p){ if(driven.has(p)) return true; p=p.parent; } return false; };
 
-  const liveNames = new Set();
-  v.scene.traverse(o=>{ if(o.isBone && isLive(o)) liveNames.add(baseBoneName(o.name)); });
+  const liveExact = new Map(), liveSoft = [];    // normalized name -> live bone's real name
+  v.scene.traverse(o=>{
+    if(!o.isBone || !isLive(o)) return;
+    if(!liveExact.has(baseBoneName(o.name))) liveExact.set(baseBoneName(o.name), o.name);
+    const s = softBoneName(o.name);
+    if (s.length >= 4 && !liveSoft.some(x=>x.soft===s)) liveSoft.push({ soft:s, name:o.name });
+  });
 
-  const detail = [];
+  // Longest containment wins, so "upperarml" beats "arm" on `Sleeve_UpperArm_L`.
+  const looseMatch = (nm)=>{
+    const s = softBoneName(nm);
+    if (s.length < 4) return null;
+    let best = null;
+    for (const l of liveSoft){
+      if (s.includes(l.soft) || l.soft.includes(s)){ if(!best || l.soft.length > best.soft.length) best = l; }
+    }
+    return best;
+  };
+
+  const detail = [], sample = [];
   for (const e of entries){
     const bones = e.mesh.skeleton?.bones;
     if(!bones?.length) continue;
-    let live = 0, retarget = 0;
+    let live = 0, exact = 0, loose = 0;
+    const dead = [];
     for (const b of bones){
-      if (isLive(b)) live++;
-      else if (liveNames.has(baseBoneName(b.name))) retarget++;
+      if (isLive(b)){ live++; continue; }
+      dead.push(b);
+      if (liveExact.has(baseBoneName(b.name))) exact++;
+      else if (looseMatch(b.name)) loose++;
+
     }
     if (live === bones.length) continue;                 // fully driven — normal
     e.line += live ? ` !${live}/${bones.length}` : ' DEAD';
-    if (retarget) e.line += `>${retarget}`;
-    detail.push(`${e.mesh.name||'?'}: ${live}/${bones.length} live, ${retarget} name-matched` +
-                ` (e.g. ${bones.filter(b=>!isLive(b)).slice(0,3).map(b=>b.name).join(', ')})`);
+    if (exact) e.line += `>${exact}`;
+    if (loose) e.line += `~${loose}`;
+    // Readout sample: a few dead names + what they'd rebind to, so the naming
+    // scheme is visible on a phone (the console detail below isn't).
+    for (const b of dead.slice(0,2)){
+      if (sample.length >= 4) break;
+      const hit = liveExact.get(baseBoneName(b.name)) || looseMatch(b.name)?.name;
+      const tag = (b.name||'?').slice(0,18) + (hit ? '→'+hit.slice(0,12) : '');
+      if (!sample.includes(tag)) sample.push(tag);
+    }
+    detail.push(`${e.mesh.name||'?'}: ${live}/${bones.length} live, ${exact} exact, ${loose} loose` +
+                ` (${dead.slice(0,4).map(b=>b.name).join(', ')})`);
   }
+  if (sample.length) skinInfo = 'dead: ' + sample.join(' ');
   if (detail.length) console.warn('[conbadge] meshes skinned to bones the humanoid does not drive:\n' + detail.join('\n'));
 }
 
@@ -445,6 +485,7 @@ async function mountVRM(buffer, filename){
   const info =
     `VRM ${ver} · ${CONFIG.BUILD} · meshes ${visMesh}/${meshCount}${attachedInfo}\n${morphInfo}\n`+
     meshDiag.map(e=>e.line).join('\n')+`\n`+
+    (skinInfo?`${skinInfo}\n`:'')+
     `face: ${Object.keys(rig.morphs||{}).filter(k=>rig.morphs[k]?.length).join(',')||'none'}\n`+
     `tail ${rig.tail.length} ears ${rig.ears.length} springs ${springCount}`+
     (lookInfo?`\n${lookInfo}`:'')+

@@ -30,9 +30,14 @@ renderer itself (`core.js`). Lighting/shading is a separate system — see
    descends from one. Meshes that aren't fully live get a marker appended to
    their load-readout line: `DEAD` (no live bones at all — a garment exported
    with its own duplicate armature) or `!<live>/<total>` (partially bound).
-   A trailing `>N` counts how many dead bones have a same-named counterpart
-   in the live skeleton after stripping `.001`-style suffixes — i.e. how
-   retargetable a rebind would be. Full per-mesh detail goes to the console.
+   Trailing counts say how retargetable a rebind would be: `>N` dead bones
+   with an exactly-matching live name (`.001`/copy suffixes stripped), `~N`
+   with a loose match (soft names — alphanumerics only — where one contains
+   the other, catching the Unity outfit-merge convention of prefixing or
+   suffixing copied bones: `Sweatshirt_Chest`, `Sleeve_UpperArm_L`). A
+   `dead:` line then samples up to four dead bone names with the live bone
+   each would rebind to, so the naming scheme is readable on a phone. Full
+   per-mesh detail goes to the console.
 7. Rig resolution: normalized bones (`rig.bones`, what gets animated) and raw
    bones (`rig.raw`, actual render-space nodes) are both captured per entry
    in `MANAGED` (humanoid bones + finger bones). Rest quaternions are

@@ -55,13 +55,27 @@ moment it's resolved instead of letting it accumulate._
   doesn't fire in this sandbox, so confirm the panel dims while a clip plays.
   (Unaffected by the b87 state fix; `enterPose()` clears `dimPlay` on return.)
 
-- **Second-avatar outfit doesn't animate** (`b92`, diagnostic only so far).
+- **Second-avatar outfit doesn't animate** (`b92`/`b93`, diagnostic only so far).
   An avatar exported with a full outfit renders the outfit frozen at bind pose.
-  `b92` adds `auditSkinning()` so the load readout says *which* failure it is
-  (`Me+ROOT` unweighted static geometry vs `Sk … DEAD>N` duplicate armature) —
-  see [rendering.md](rendering.md). **Owed:** load that avatar, read the outfit's
-  mesh line, report it. Then decide: re-export with a merged armature (only real
-  fix), or an in-app name-based rebind if the `>N` retarget count is high.
+  `b92` added `auditSkinning()`; see [rendering.md](rendering.md).
+
+  **Confirmed on-device (`b92`):** it's the duplicate-armature case. 17 garment
+  meshes flag `DEAD` (Sweatsh, Sash, Scarf, Bracele, Bodysui, ULTRA_*, …) — zero
+  live bones each, small skeletons (b8–b29, vs the body's b95), so each garment
+  carries only the bones it's weighted to rather than a full rig copy. The
+  bandana that *does* work reads `Bandana Sk b8` with no marker (skinned into
+  the body skeleton). Three rigid props (Visor, BadgeAt, Glowsti) were already
+  rescued by `attachLooseMeshes()` — `attached 3`.
+
+  **Open question `b93` answers:** no `>N` appeared on any line, i.e. zero exact
+  name matches — but the exact matcher only strips `.001`-style suffixes, so
+  prefixed/suffixed merge names would miss. `b93` adds loose (containment)
+  matching → `~N`, plus a `dead:` sample line showing real bone names and their
+  would-be targets. **Owed:** reload and report the `dead:` line.
+
+  Then pick the fix: per-bone rebind by name (preserves real deformation) if the
+  names map; nearest-live-bone-by-position as the approximate fallback if they
+  don't; re-export with a merged armature is the only true fix either way.
 
 ## Blocked / pending
 
