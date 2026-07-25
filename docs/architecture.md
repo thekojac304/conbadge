@@ -11,13 +11,14 @@ copy). Files sit at the repo root (not in a `js/` subfolder — see
 Dependency flow is one-directional, no cycles:
 
 ```
-config → core → light/pose → camera → anim → avatar/input → ui → main
+config → core → project → light/pose → camera → anim → avatar/input → ui → main
 ```
 
 | File | Role |
 |---|---|
 | `config.js` | All tuning constants + `TOUCH_ZONES` map |
 | `core.js` | Renderer/scene/camera, `rig`, `S`, `settings`, storage, sensors, `hooks` |
+| `project.js` | Versioned project record, slice registry, autosave, migrations |
 | `light.js` | Lighting/shading "Look" system: light rig, tone mapping, MToon treatment |
 | `pose.js` | `PoseAccumulator`, expression driver, arm IK, `anchorWorld` |
 | `camera.js` | Framing, saved views, pan clamp, parallax, `renderScene`, `skeletonBox` |
@@ -47,6 +48,12 @@ graph acyclic:
 - **`skeletonBox` lives in `camera.js`**, not `avatar.js`, so `camera.js`
   never has to import `avatar.js` (camera needs bounding-box logic before
   avatar-load concerns like morph pruning are relevant).
+- **`project.js`'s slice registry** is the `hooks` idea generalized: it imports
+  only `config` + `core`, and subsystems *register* their own serialization with
+  it (`project.register({id, version, capture, apply, migrate})`) rather than it
+  importing them. A project module that read Tuner state directly would have to
+  sit below `ui.js`, which needs to call it for the export/import buttons — a
+  cycle. See [persistence.md](persistence.md).
 
 The `rig` object (also in `core.js`) is the other big shared structure: it's
 populated once per avatar load (in `avatar.js`) and read every frame by

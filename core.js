@@ -15,7 +15,7 @@ export const S = {
 
 // Lets low-level modules call into the UI/animation without importing them.
 export const hooks = { onAvatarLoaded:null, openSettings:null, closeSettings:null,
-                       setMode:null, onShake:null };
+                       setMode:null, onShake:null, onSettingsSaved:null };
 
 /* ===========================================================================
    Small storage helpers
@@ -25,21 +25,37 @@ const LS = {
   set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} },
 };
 
-// IndexedDB: one object store keyed 'avatar' holding {name, buffer}
-const IDB_NAME='conbadge', IDB_STORE='files';
+// IndexedDB. 'files' holds the cached avatar under key 'avatar' ({name, buffer});
+// the rest back project.js (see docs/persistence.md).
+//   projects  id -> the versioned project record
+//   history   `${id}:${ts}` -> autosave ring entry
+//   meta      'activeProject', legacy-import backups
+// All four are created at v2 even though history/meta aren't written yet, so
+// later phases don't need another version bump — an upgrade is the risky part
+// (it blocks while another tab holds the DB open at the older version).
+const IDB_NAME='conbadge', IDB_STORE='files', IDB_VERSION=2;
+const IDB_STORES=['files','projects','history','meta'];
 function idbOpen(){
   return new Promise((res,rej)=>{
-    const r = indexedDB.open(IDB_NAME,1);
-    r.onupgradeneeded = ()=> r.result.createObjectStore(IDB_STORE);
-    r.onsuccess = ()=> res(r.result);
+    const r = indexedDB.open(IDB_NAME,IDB_VERSION);
+    // Guarded: the v1 handler created 'files' unconditionally, which throws a
+    // ConstraintError on every existing install once the version is bumped.
+    r.onupgradeneeded = ()=>{
+      const db = r.result;
+      for (const s of IDB_STORES) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s);
+    };
+    // Another tab still has v1 open, so the upgrade can't run. Reject rather
+    // than hang forever; callers surface it instead of silently losing writes.
+    r.onblocked = ()=> rej(new Error('Another Con Badge tab is open — close it and reload'));
+    r.onsuccess = ()=>{ const db=r.result; db.onversionchange=()=>db.close(); res(db); };
     r.onerror  = ()=> rej(r.error);
   });
 }
-async function idbPut(key,val){ const db=await idbOpen(); return new Promise((res,rej)=>{
-  const tx=db.transaction(IDB_STORE,'readwrite'); tx.objectStore(IDB_STORE).put(val,key);
+async function idbPut(key,val,store=IDB_STORE){ const db=await idbOpen(); return new Promise((res,rej)=>{
+  const tx=db.transaction(store,'readwrite'); tx.objectStore(store).put(val,key);
   tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
-async function idbGet(key){ const db=await idbOpen(); return new Promise((res,rej)=>{
-  const tx=db.transaction(IDB_STORE,'readonly'); const rq=tx.objectStore(IDB_STORE).get(key);
+async function idbGet(key,store=IDB_STORE){ const db=await idbOpen(); return new Promise((res,rej)=>{
+  const tx=db.transaction(store,'readonly'); const rq=tx.objectStore(store).get(key);
   rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }); }
 
 /* ===========================================================================
@@ -134,7 +150,9 @@ export const settings = LS.get('cb.settings', { name:'', pronouns:'', tagline:''
   look:'studio', lightOn:true, lightIntensity:1, rimIntensity:1 });
 settings.morphs = settings.morphs || {};
 settings.tailCurl = Math.max(0, settings.tailCurl||0);
-export function saveSettings(){ LS.set('cb.settings', settings); }
+// Writes the fast synchronous mirror, then lets project.js schedule a debounced
+// save of the full versioned record (hook, so core never imports project.js).
+export function saveSettings(){ LS.set('cb.settings', settings); hooks.onSettingsSaved?.(); }
 export function rand(a,b){ return a + Math.random()*(b-a); }
 
 export function toast(msg, ms=8000){

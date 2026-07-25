@@ -96,9 +96,13 @@ off. Don't echo large file sections back into the chat.
 ## Architecture
 
 Plain ES modules, dependency flow one-way, no cycles:
-`config → core → light/pose → camera → anim → avatar/input → ui → main`.
+`config → core → project → light/pose → camera → anim → avatar/input → ui → main`.
 See [docs/architecture.md](docs/architecture.md) for the full module table
 and the `S`/`hooks`/`rig` shared-state pattern that keeps it acyclic.
+
+Persistent state (settings, clips, the versioned project record, autosave,
+migrations) is owned by `project.js` — see
+[docs/persistence.md](docs/persistence.md) before touching storage.
 
 ## Conventions that matter
 

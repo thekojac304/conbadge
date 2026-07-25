@@ -116,7 +116,9 @@ underneath for free), layered like a gesture.
   (loads that key back into the sliders), **Update** (writes the current pose
   back into the key), **Dup**, **Del**. **Play/Pause** with an animated
   playhead; **Stop** returns to posing. **Save/Load/Del** persist to
-  `localStorage['cb.clips']`.
+  `localStorage['cb.clips']`, which `project.js` also captures into the
+  versioned project record on every autosave (see
+  [persistence.md](persistence.md)).
 - **Player states (`clips` in `anim.js`):** `play` (advance `t`), `scrub`/
   `pause` (hold `t`, keep applying the sample — this is what the scrub/preview
   path uses), `resume`, `stop`. Non-loop playback parks on the last frame at
@@ -134,7 +136,11 @@ underneath for free), layered like a gesture.
 - **Not yet (Phase 3):** procedural secondary-motion enrichment, touch-zone
   binding / built-in override (the "bridge"), export/bake-to-source. Clips
   still only play from the Tuner; nothing fires them in normal use yet, and a
-  saved clip lives only in that browser's `localStorage`.
+  saved clip still lives only in this browser's storage until project
+  export/import ships.
+- **`clips.editKeys` (the clip being authored) is still memory-only** — a reload
+  loses it. Closing that gap is phase 2 of the project-save work; see
+  [persistence.md](persistence.md).
 
 ## Design philosophy
 

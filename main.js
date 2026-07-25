@@ -2,6 +2,7 @@
 import { THREE, S, rig, settings, scene, camera, renderer, controls, clock, resize,
          toast, showOverlay, showError, idbGet, motion, enableMotion } from './core.js';
 import { CONFIG } from './config.js';
+import * as project from './project.js';
 import { pose, flushExpr } from './pose.js';
 import { idle, gestures, reactions, petting, particles, applyTailPose, applyEarPose,
          decayImpulses, applyHipsDrop, clips } from './anim.js';
@@ -60,6 +61,13 @@ function loop(){
    =========================================================================== */
 
 async function boot(){
+  // Hydrate the versioned project record BEFORE anything reads `settings` for
+  // display — it may carry newer values than the localStorage mirror core.js
+  // loaded synchronously (e.g. after an import), and it runs the legacy import
+  // on first launch. Never throws: on a storage failure it leaves the mirror
+  // in place and reports via toast.
+  await project.load();
+
   applySettings();
   applyCamLock();
   initLights();     // scene lights + tone mapping (light.js owns them)

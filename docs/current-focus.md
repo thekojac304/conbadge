@@ -8,6 +8,27 @@ moment it's resolved instead of letting it accumulate._
 
 ## Active work
 
+- **Project save system, phase 1** (build `b88`, working tree, not yet confirmed
+  on-device). New `project.js`: versioned project record in IndexedDB, slice
+  registry, rev-based reconciliation with the localStorage settings mirror,
+  debounced autosave + pagehide flush, forward-compatible migrations, and the
+  automatic legacy (`cb.settings`/`cb.clips`) import. `core.js` IDB bumped to
+  v2 with a guarded upgrade; `main.js` awaits `project.load()` before
+  `applySettings()`. Full design in [persistence.md](persistence.md).
+  Verified locally: 42-case harness (legacy import, all three reconciliation
+  cases, forward-compat preservation, save-failure surfacing, debounce/flush),
+  a real-browser v1→v2 upgrade test (cached avatar survives, no
+  `ConstraintError`), and an end-to-end boot on a local server that imported
+  seeded legacy data and autosaved a live toggle change.
+  **On-device check owed:** load on the phone, confirm the `b88` stamp, that
+  settings/nameplate come back unchanged after the migration, and that the
+  "Imported your existing settings and N clips" toast appears exactly once.
+
+  *Phase 2 (next):* real `clips` slice owned by `anim.js` including
+  **`clips.editKeys`**, a `tuner` slice, and the autosave history ring — this is
+  what actually closes the "lose unsaved animation work on reload" gap.
+  *Phase 3:* Project card UI with export/import `.conbadge.json`.
+
 - **Tuner single-driver fix + menu redesign** (build `b87`, working tree, not
   yet confirmed on-device). Two changes:
   1. *State fix* — the Tuner no longer goes stale after using the keyframe
@@ -43,11 +64,13 @@ moment it's resolved instead of letting it accumulate._
 
 ## Next priorities
 
-1. On-device confirmation of the b87 Tuner fixes (bone slider drives the avatar
-   after a clip finishes / after a scrub) and the b86 auto-fade play-dim path.
-2. Idle resting-pose tuning session (see above) once the user has time to
+1. On-device confirmation of the b88 legacy migration (above), plus the b87
+   Tuner fixes (bone slider drives the avatar after a clip finishes / after a
+   scrub) and the b86 auto-fade play-dim path.
+2. Project save phase 2 — persist `clips.editKeys` + Tuner state, history ring.
+3. Idle resting-pose tuning session (see above) once the user has time to
    dial it in.
-3. Resume normal animation-tuning cadence via the Animation Tuner as new
+4. Resume normal animation-tuning cadence via the Animation Tuner as new
    gesture/reaction requests come in.
 
 ---

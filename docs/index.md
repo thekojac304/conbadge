@@ -19,6 +19,7 @@ conventions that would otherwise have to be rediscovered the hard way.
 | [rendering.md](rendering.md) | VRM load, mesh repair, morph pruning at load time, camera framing/IK, backdrop | Touching `avatar.js`, `camera.js`, avatar-load behavior, backdrop/parallax |
 | [lighting.md](lighting.md) | The "Look" lighting/shading system | Touching `light.js`, MToon materials, brightness/rim/Look controls |
 | [ui.md](ui.md) | Settings sheet, modes, test bar, Tuner UI, nameplate, touch input | Touching `ui.js`, `input.js`, any settings-sheet or touch-interaction work |
+| [persistence.md](persistence.md) | Project record, slice registry, autosave, migrations, IndexedDB layout | Touching `project.js`, storage, anything that needs to survive a reload |
 | [performance.md](performance.md) | Mobile GPU limits, morph capping, battery saver | Anything affecting frame cost, morph counts, or mobile rendering |
 | [workflow.md](workflow.md) | Git/push loop, build stamp, verification steps, doc-maintenance rules | Every session touches this implicitly; read in full if unsure how to hand off a change |
 
