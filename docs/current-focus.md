@@ -67,15 +67,28 @@ moment it's resolved instead of letting it accumulate._
   the body skeleton). Three rigid props (Visor, BadgeAt, Glowsti) were already
   rescued by `attachLooseMeshes()` — `attached 3`.
 
-  **Open question `b93` answers:** no `>N` appeared on any line, i.e. zero exact
-  name matches — but the exact matcher only strips `.001`-style suffixes, so
-  prefixed/suffixed merge names would miss. `b93` adds loose (containment)
-  matching → `~N`, plus a `dead:` sample line showing real bone names and their
-  would-be targets. **Owed:** reload and report the `dead:` line.
+  **Confirmed on-device (`b93`):** the dead bones are *numbered copies of the
+  humanoid bones* — `dead: Hips_3→Hips Spine_2→Spine Spine_3→Spine`. Each
+  garment carries its own copy of the slice of armature it needs, and the export
+  never merged those copies into the body skeleton. Roughly half the dead bones
+  (~94 of ~193) are such copies (`Bodysui ~11/11`, `ULTRA_M ~11/11`,
+  `Masc_Sh ~8/8`); the rest are accessory/physics chains with no counterpart
+  (`ULTRA_W b29 DEAD`, `Nocturn b5 DEAD`, `Bracele ~1/24`) — ex-PhysBones that
+  didn't convert (`springs 0`).
 
-  Then pick the fix: per-bone rebind by name (preserves real deformation) if the
-  names map; nearest-live-bone-by-position as the approximate fallback if they
-  don't; re-export with a merged armature is the only true fix either way.
+  **Decision: fix at export, not in-app** (user's call, and the right one — the
+  merge has to happen before the VRM exporter runs, since the exporter maps a
+  humanoid and won't merge armatures; a Modular Avatar setup needs a *manually
+  baked* copy exported rather than the authoring prefab, because MA otherwise
+  resolves Merge Armature at VRChat build time, which the VRM path skips).
+  The in-app per-bone rebind stays **unbuilt, in the back pocket** for a garment
+  that turns out to be unmergeable. Spring-bone conversion for the ex-PhysBone
+  chains is a separate, optional export step — without it they follow the body
+  rigidly, which still beats frozen.
+
+  **Acceptance test:** re-export, load, confirm no garment line carries a `DEAD`
+  marker. **Owed:** which export pipeline was used (Modular Avatar? UniVRM vs
+  VRM Converter for VRChat?) — asked, unanswered.
 
 ## Blocked / pending
 
