@@ -86,17 +86,25 @@ moment it's resolved instead of letting it accumulate._
   chains is a separate, optional export step — without it they follow the body
   rigidly, which still beats frozen.
 
-  **Export pipeline: UniVRM 0.131.1** (current; not the problem — no VRM
-  exporter merges armatures). The `_2`/`_3` suffixes are almost certainly
-  UniVRM de-duplicating node names at export, meaning three separate objects
-  named `Hips` existed in the scene — i.e. the outfits still had their own
-  armatures when export ran. Modular Avatar resolves Merge Armature at VRChat
-  *build* time, which the VRM path skips, so the fix is **Manual Bake Avatar**
-  first, then do the VRM setup/export on the baked clone. MA matches bones by
-  name, so any garment still `DEAD` after a bake likely needs its bones renamed
-  to match the body's. For the ex-PhysBone chains, **VRM Converter for VRChat**
-  (`jp.pokemori`, VPM catalog) has a SwayingObjectsConverter (VRCPhysBone ↔
-  VRMSpringBone) — complements UniVRM, still needs the bake first.
+  **Export pipeline: UniVRM 0.131.1 + VRCFury** (no Modular Avatar). UniVRM is
+  not the problem — no VRM exporter merges armatures. The `_2`/`_3` suffixes are
+  UniVRM de-duplicating node names at export, meaning several objects named
+  `Hips` existed in the scene: the outfits still had their own armatures when
+  export ran. **VRCFury's Armature Link does the merge at avatar-upload time,
+  which the VRM export path skips entirely** — that's the whole bug.
+
+  **Fix: Tools → VRCFury → Build an Editor Test Copy, then run the UniVRM setup
+  and export on that copy.** Gotcha hit on the first attempt: the clothes look
+  like they vanish in the test copy. They haven't — VRCFury Toggles compute rest
+  state from the editor scene, and a "Turn On" action defaults the object to
+  *off*, so menu-toggled outfits start disabled in the built copy. Re-enable the
+  wanted pieces in the clone's hierarchy before exporting (VRM has no runtime
+  toggles — whatever is enabled at export is baked in permanently), and export
+  before the transient copy goes away.
+
+  For the ex-PhysBone chains, **VRM Converter for VRChat** (`jp.pokemori`, VPM
+  catalog) has a SwayingObjectsConverter (VRCPhysBone ↔ VRMSpringBone) —
+  complements UniVRM, still needs the baked copy first.
 
   **Acceptance test:** re-export, load, confirm no garment line carries a `DEAD`
   marker. Spring bones are polish and come after.
