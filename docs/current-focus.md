@@ -20,9 +20,13 @@ moment it's resolved instead of letting it accumulate._
   a real-browser v1→v2 upgrade test (cached avatar survives, no
   `ConstraintError`), and an end-to-end boot on a local server that imported
   seeded legacy data and autosaved a live toggle change.
-  **On-device check owed:** load on the phone, confirm the `b88` stamp, that
-  settings/nameplate come back unchanged after the migration, and that the
-  "Imported your existing settings and N clips" toast appears exactly once.
+  **`b89` follow-up:** the legacy-import toast was invisible on-device — the
+  load readout is itself a `toast()` sharing `#diag`, and the avatar mounts after
+  `project.load()`, so the readout always overwrote it. Save state now has its
+  own line in the readout via `project.summary()`.
+  **On-device check owed:** confirm the `b89` stamp and a
+  `project rev N · saved … · N clips` line in the readout (`migrated from
+  legacy:v0` on the first load only), and that settings/nameplate are unchanged.
 
   *Phase 2 (next):* real `clips` slice owned by `anim.js` including
   **`clips.editKeys`**, a `tuner` slice, and the autosave history ring — this is

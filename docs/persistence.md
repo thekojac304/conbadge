@@ -109,6 +109,18 @@ upgrade sets `state.lastError` and raises a `toast()`. The user is normally on a
 phone with no DevTools; a save that fails invisibly is the worst possible
 outcome for a feature whose whole point is not losing work.
 
+### Save state in the load readout
+
+`project.summary()` appends a line to the on-screen load readout (built in
+`avatar.js`): `project rev 12 · saved 20:11 · 3 clips · persisted`, or
+`project SAVE FAILED — …` when `state.lastError` is set.
+
+This exists because **the load readout is itself a `toast()`**, so it shares
+`#diag` with every other message. The avatar mounts after `project.load()`, so
+the readout reliably overwrites any boot-time toast — including the legacy-import
+message, which was consequently never seen on-device. Save state has to live in
+the readout itself, not in a toast that the readout replaces.
+
 ### Migrations
 
 - **Legacy (v0) import** — on first run with no record but existing `cb.settings`
@@ -152,6 +164,16 @@ until phase 2 — the version bump is the risky part, so it's worth doing once.
   authoritative on next load.
 
 ## Known limitations
+
+- **`settings` never gains defaults for keys added after a user's blob was first
+  written.** `LS.get('cb.settings', {…})` returns the *stored* object whenever the
+  key exists — the default object is only used when there's no blob at all. So a
+  long-standing install has `undefined` for every setting introduced since, and
+  each read site's own `|| default` / `!== false` guard is what keeps it working
+  (visible as `look undefined` in the load readout). Pre-dates the project system.
+  Fixing it means merging stored-over-defaults, which is **not behaviour-neutral**:
+  a key like `bgAuto` (default `true`) currently reads falsy for those users, so
+  merging would switch their backdrop to Look-matched colours.
 
 - Phase 1 persists settings and the clip library only. **`clips.editKeys` (the
   clip being authored) and Tuner overrides are still memory-only** — the

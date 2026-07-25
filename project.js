@@ -292,3 +292,18 @@ document.addEventListener('visibilitychange', ()=>{ if (document.visibilityState
 
 // Read-only view of the current record, for export/diagnostics (phase 3).
 export function snapshot(){ return raw ? JSON.parse(JSON.stringify(raw)) : null; }
+
+// One line for the on-screen load readout (avatar.js). The phone has no DevTools,
+// so this is the only way to see that the record is actually being written — and
+// a failed save has to be visible for longer than a toast that the readout itself
+// immediately overwrites.
+export function summary(){
+  if (!state.ready) return 'project not loaded';
+  if (state.lastError) return 'project SAVE FAILED — ' + (state.lastError.message || state.lastError);
+  const t = state.savedAt
+    ? new Date(state.savedAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '—';
+  const n = Object.keys(raw?.slices?.clips?.data || {}).length;
+  return `project rev ${state.rev} · saved ${t} · ${n} clip${n===1?'':'s'}`
+       + (state.persisted ? ' · persisted' : '')
+       + (state.migratedFrom ? ` · migrated from ${state.migratedFrom}` : '');
+}

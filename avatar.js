@@ -1,6 +1,7 @@
 // VRM loading: mesh repair, morph-target pruning, rig measurement, diagnostics.
 import { THREE, S, rig, settings, scene, hooks, toast, showOverlay, showError, MANAGED } from './core.js';
 import { CONFIG } from './config.js';
+import { summary as projectSummary } from './project.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { frameCamera } from './camera.js';
@@ -399,7 +400,10 @@ async function mountVRM(buffer, filename){
     meshDiag.join('\n')+`\n`+
     `face: ${Object.keys(rig.morphs||{}).filter(k=>rig.morphs[k]?.length).join(',')||'none'}\n`+
     `tail ${rig.tail.length} ears ${rig.ears.length} springs ${springCount}`+
-    (lookInfo?`\n${lookInfo}`:'');
+    (lookInfo?`\n${lookInfo}`:'')+
+    // Save state last: this readout replaces any toast raised during boot (both
+    // write to #diag), so project.js's own messages would otherwise never be seen.
+    `\n${projectSummary()}`;
   toast(info, 9000);
   console.log('[conbadge]', info.replace(/\n/g,' | '), rig.morphs);
   hooks.onAvatarLoaded?.();
