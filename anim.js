@@ -1,6 +1,7 @@
 // Idle life, gesture library, tail/ear motion, particles, petting, reactions.
 import { THREE, S, rig, settings, scene, rand, motion, hooks } from './core.js';
 import { CONFIG } from './config.js';
+import * as project from './project.js';
 import { pose, setExpr, envelope, armBase, armReach, scratchTarget, anchorWorld } from './pose.js';
 
 const idle = {
@@ -944,6 +945,9 @@ const clips = {
   paused:false,               // Phase 2 scrub: hold t, keep applying the sample
   ended:false,                // a non-loop clip just ran off its end (vs. a deliberate pause)
   editKeys:[],                // the clip being authored (array of keyframes)
+  library:{},                 // saved clips by name — persisted via the project record
+  editName:'',                // name field + loop toggle for the clip being authored,
+  editLoop:false,             // persisted too so a reload restores the whole editing session
   cur:{ ov:{}, face:{} },     // this frame's interpolated snapshot (ears/tail read here)
   play(clip){ this.playing = clip; this.t = 0; this.paused = false; this.ended = false; gestures.fadeOut(); },
   // Freeze on a clip at a specific time — the timeline scrub/preview path.
@@ -970,6 +974,61 @@ const clips = {
     for (const s in snap.face){ if (snap.face[s]) setExpr(s, snap.face[s]); }
   }
 };
+
+/* ---------------------------------------------------------------------------
+   Project persistence for clip + Tuner state (see docs/persistence.md).
+   Deep-copied on both capture and apply: a keyframe channel array shared
+   between the record and the live editor would corrupt keys as soon as one is
+   edited — the specific bug the harness checks for (see docs/ui.md).
+--------------------------------------------------------------------------- */
+const LEGACY_CLIPS = 'cb.clips';
+const cloneKeys = ks => (ks||[]).map(k => ({ t:k.t,
+  ov: Object.fromEntries(Object.entries(k.ov||{}).map(([b,v])=>[b, (v||[]).slice(0,4)])),
+  face: { ...(k.face||{}) } }));
+const cloneLib = lib => Object.fromEntries(Object.entries(lib||{})
+  .map(([n,c])=>[n, { keys:cloneKeys(c.keys), loop:!!c.loop }]));
+function readLegacyClips(){
+  try { return JSON.parse(localStorage.getItem(LEGACY_CLIPS)) || {}; } catch(e){ return {}; }
+}
+
+// Seed from the legacy key so a first run before any record exists still finds
+// the user's clips; apply() overwrites this when the record has a library.
+clips.library = readLegacyClips();
+
+project.register({
+  id:'clips', version:2,
+  capture(){
+    const library = cloneLib(clips.library);
+    // Keep the synchronous localStorage copy in step — same role as the settings
+    // mirror: it's the write that always lands if the tab is killed mid-save.
+    try { localStorage.setItem(LEGACY_CLIPS, JSON.stringify(library)); } catch(e){}
+    return { library, editKeys:cloneKeys(clips.editKeys),
+             editName:clips.editName, editLoop:clips.editLoop };
+  },
+  apply(d){
+    clips.library  = cloneLib(d.library);
+    clips.editKeys = cloneKeys(d.editKeys);
+    clips.editName = d.editName || '';
+    clips.editLoop = !!d.editLoop;
+  },
+  migrate:{
+    // v1 was project.js's passthrough: the raw cb.clips library object, captured
+    // only when some unrelated event triggered a save. Live localStorage is
+    // therefore at least as current, so merge it OVER the record's copy —
+    // otherwise a clip saved since the last record write would be dropped here.
+    1: v1 => ({ library:{ ...(v1||{}), ...readLegacyClips() },
+                editKeys:[], editName:'', editLoop:false }),
+  },
+});
+
+// In-progress Tuner pose. Deliberately does NOT restore kind/name: reopening the
+// app shouldn't leave an animation held: only the dialled-in deltas come back.
+project.register({
+  id:'tuner', version:1,
+  capture: ()=> ({ overrides:JSON.parse(JSON.stringify(tuner.overrides || {})),
+                   face:{ ...(tuner.face || {}) } }),
+  apply(d){ tuner.overrides = d.overrides || {}; tuner.face = d.face || {}; },
+});
 
 // Applies the idle bounce's hip sink plus any gesture-requested lift. Rotations
 // come from the pose accumulator; this is the one place we touch a bone's

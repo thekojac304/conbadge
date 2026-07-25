@@ -15,12 +15,12 @@ object store*, not a path.
 |---|---|---|
 | `files` | `avatar` | `{name, buffer}` — the cached VRM |
 | `projects` | `p_default` | the versioned project record |
-| `history` | `{id}:{ts}` | autosave ring (created at v2, **not written yet** — phase 2) |
+| `history` | `{id}:{rev}` | autosave ring, newest `HISTORY_MAX` (20) revisions |
 | `meta` | `backup:v0` | pre-migration copy of the legacy localStorage blobs |
 
-Plus two localStorage keys: `cb.settings` (the synchronous settings mirror) and
-`cb.rev` (the record revision that mirror was written at). The legacy
-`cb.clips` is still the live clip library until phase 2.
+Plus three localStorage keys: `cb.settings` (the synchronous settings mirror),
+`cb.rev` (the record revision that mirror was written at), and `cb.clips` (a
+mirror of the clip library, kept in step by the clips slice's `capture()`).
 
 Consequences worth knowing, because they're the reason export matters:
 
@@ -68,10 +68,23 @@ but `ui.js` needs to call it for the export/import buttons — a cycle. With the
 registry, each subsystem also keeps ownership of its own serialization instead
 of a god module accumulating every field list.
 
-Registered today: `settings` (owned by `project.js` itself, since it can import
-`core` directly) and `clips` (a **passthrough** that captures
-`localStorage['cb.clips']` verbatim — phase 2 replaces it with a real slice
-owned by `anim.js`).
+Registered today:
+
+| Slice | Owner | Data |
+|---|---|---|
+| `settings` v1 | `project.js` (it can import `core` directly) | the whole `settings` object |
+| `clips` v2 | `anim.js` | `{library, editKeys, editName, editLoop}` |
+| `tuner` v1 | `anim.js` | `{overrides, face}` |
+
+`clips` carries **`editKeys` — the clip being authored** — not just the saved
+library, which is what makes an in-progress clip survive a reload. `tuner`
+deliberately stores only the dialled-in deltas, **not** `kind`/`name`: reopening
+the app shouldn't leave an animation held frozen.
+
+Every mutation path in the Tuner UI (capture, retime, update, dup, delete, load,
+save, name/loop, and the bone/face sliders) calls `project.saveSoon()`. Nothing
+depends on pressing **Save** to survive — Save now only names a draft and files
+it in the library.
 
 ### Reconciliation: why there are two copies of settings
 
@@ -134,6 +147,20 @@ the readout itself, not in a toast that the readout replaces.
   Both are preserved verbatim and re-emitted on the next save (`captureRecord()`
   merges over the loaded `raw`), so opening a project written by a newer build on
   an older build never strips data.
+- **A migration saves immediately.** `load()` calls `save({reason:'migrate'})`
+  whenever `state.migratedFrom` is set, because a migration otherwise only
+  changes in-memory state — the record keeps its old shape, and anything reading
+  `raw` (the load readout, an export) keeps reporting the pre-migration data
+  until some unrelated event happens to trigger a write.
+
+### Autosave history ring
+
+Every successful save also appends to the `history` store, pruned to the newest
+`HISTORY_MAX` (20) revisions. `history()` lists them newest-first; `restore(rev)`
+applies one and then **saves it forward as a new revision**, so restoring is
+itself undoable rather than rewriting history. The whole ring is best-effort:
+`pushHistory()` swallows its own errors, because history must never be the
+reason a real save fails.
 
 ### The IndexedDB v2 upgrade
 
@@ -151,11 +178,15 @@ until phase 2 — the version bump is the risky part, so it's worth doing once.
   only.** Driven by core.js's module-init read, not by preference. The cost is
   two writers for one piece of state; `cb.rev` plus "`project.js` is the only
   writer of the record" is what contains it.
-- **The clips slice is a passthrough in phase 1.** It captures live `cb.clips` on
-  *every* save rather than a one-time copy, and its `apply()` only seeds
-  localStorage when empty. Without that, saving a clip after the initial import
-  would leave the record's copy stale, and phase 2 would restore the stale one
-  over the fresh one.
+- **The clips v1→v2 migration merges live `cb.clips` OVER the record's copy.**
+  In phase 1 nothing triggered a save when a clip was saved, so the record's
+  library was only as current as the last unrelated write — localStorage was
+  always at least as fresh. Taking the record's copy alone would silently drop
+  any clip saved since. This was a real case, not a hypothetical: a b89 install
+  had one clip in the record and two in localStorage.
+- **Clip/Tuner state is deep-copied on both capture and apply.** A keyframe
+  channel array shared between the record and the live editor corrupts keys as
+  soon as one is edited — see [ui.md](ui.md) on `cloneKey()`.
 - **Legacy keys are not deleted after import.** They cost a few KB and are the
   fallback if the record is lost. Remove them only after several builds have
   confirmed the record is reliable.
@@ -175,20 +206,19 @@ until phase 2 — the version bump is the risky part, so it's worth doing once.
   a key like `bgAuto` (default `true`) currently reads falsy for those users, so
   merging would switch their backdrop to Look-matched colours.
 
-- Phase 1 persists settings and the clip library only. **`clips.editKeys` (the
-  clip being authored) and Tuner overrides are still memory-only** — the
-  original loss risk is not closed until phase 2.
-- No export/import yet (phase 3), so there is still no off-device copy.
-- The autosave history ring store exists but is unwritten, so there's no
-  "restore an earlier revision" path yet.
+- No export/import yet (phase 3), so there is still **no off-device copy** — the
+  only protection against losing the origin's storage entirely.
+- `history()`/`restore()` exist and are tested, but nothing in the UI calls them
+  yet; restoring a revision currently needs a console.
 - Single project (`p_default`). The store is keyed for more; the UI isn't built.
+- `flush()` only writes a *pending* debounced save; it is not "ensure persisted".
+  Phase 3's export should `save()` first rather than `flush()`.
 
 ## Future ideas
 
-- Phase 2: real `clips` slice owned by `anim.js` (incl. `editKeys`), `tuner`
-  slice owned by `ui.js`, the history ring, and an "autosaved ✓" indicator.
 - Phase 3: Project card in the settings sheet — name, last-saved stamp, Export /
-  Import `.conbadge.json`, restore-from-autosave, `navigator.storage.estimate()`
-  readout, and a nudge when the last export goes stale.
+  Import `.conbadge.json`, a restore-from-autosave list on top of `history()`/
+  `restore()`, `navigator.storage.estimate()` readout, and a nudge when the last
+  export goes stale.
 - Later: optional binary container carrying the VRM bytes; multiple named
   projects.

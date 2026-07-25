@@ -115,10 +115,11 @@ underneath for free), layered like a gesture.
   track to **scrub-preview** any moment. Selected-key actions: **Edit pose**
   (loads that key back into the sliders), **Update** (writes the current pose
   back into the key), **Dup**, **Del**. **Play/Pause** with an animated
-  playhead; **Stop** returns to posing. **Save/Load/Del** persist to
-  `localStorage['cb.clips']`, which `project.js` also captures into the
-  versioned project record on every autosave (see
-  [persistence.md](persistence.md)).
+  playhead; **Stop** returns to posing. **Save/Load/Del** manage the named
+  library on `clips.library`. Every edit (capture/retime/update/dup/delete, and
+  the draft itself) autosaves into the project record — **Save only names a
+  draft and files it**, it is not what makes the work survive. See
+  [persistence.md](persistence.md).
 - **Player states (`clips` in `anim.js`):** `play` (advance `t`), `scrub`/
   `pause` (hold `t`, keep applying the sample — this is what the scrub/preview
   path uses), `resume`, `stop`. Non-loop playback parks on the last frame at
@@ -138,8 +139,9 @@ underneath for free), layered like a gesture.
   still only play from the Tuner; nothing fires them in normal use yet, and a
   saved clip still lives only in this browser's storage until project
   export/import ships.
-- **`clips.editKeys` (the clip being authored) is still memory-only** — a reload
-  loses it. Closing that gap is phase 2 of the project-save work; see
+- **Clip state persists across reloads** — `clips.library`, `clips.editKeys`
+  (the in-progress draft), its name/loop, and the live Tuner overrides are all
+  slices of the project record, autosaved on every edit. See
   [persistence.md](persistence.md).
 
 ## Design philosophy

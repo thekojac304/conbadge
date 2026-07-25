@@ -57,6 +57,15 @@ async function idbPut(key,val,store=IDB_STORE){ const db=await idbOpen(); return
 async function idbGet(key,store=IDB_STORE){ const db=await idbOpen(); return new Promise((res,rej)=>{
   const tx=db.transaction(store,'readonly'); const rq=tx.objectStore(store).get(key);
   rq.onsuccess=()=>res(rq.result); rq.onerror=()=>rej(rq.error); }); }
+async function idbDel(key,store=IDB_STORE){ const db=await idbOpen(); return new Promise((res,rej)=>{
+  const tx=db.transaction(store,'readwrite'); tx.objectStore(store).delete(key);
+  tx.oncomplete=()=>res(); tx.onerror=()=>rej(tx.error); }); }
+async function idbKeys(store=IDB_STORE){ const db=await idbOpen(); return new Promise((res,rej)=>{
+  const tx=db.transaction(store,'readonly'); const rq=tx.objectStore(store).getAllKeys();
+  rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>rej(rq.error); }); }
+async function idbAll(store=IDB_STORE){ const db=await idbOpen(); return new Promise((res,rej)=>{
+  const tx=db.transaction(store,'readonly'); const rq=tx.objectStore(store).getAll();
+  rq.onsuccess=()=>res(rq.result||[]); rq.onerror=()=>rej(rq.error); }); }
 
 /* ===========================================================================
    Renderer / scene / camera / lights
@@ -139,7 +148,8 @@ const MANAGED = ['hips','spine','chest','upperChest','neck','head','leftEye','ri
   ...FINGER_BONES];
 
 
-export { renderer, scene, camera, controls, canvas, clock, rig, MANAGED, resize, LS, idbGet, idbPut };
+export { renderer, scene, camera, controls, canvas, clock, rig, MANAGED, resize, LS,
+         idbGet, idbPut, idbDel, idbKeys, idbAll };
 
 export const settings = LS.get('cb.settings', { name:'', pronouns:'', tagline:'', showPlate:true,
   platePos:'bottom', plateFont:'condensed', plateSize:100, plateColor:'#f4f6fb', plateAccent:'#6fe3c4',

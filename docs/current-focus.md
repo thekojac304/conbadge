@@ -8,30 +8,27 @@ moment it's resolved instead of letting it accumulate._
 
 ## Active work
 
-- **Project save system, phase 1** (build `b88`, working tree, not yet confirmed
-  on-device). New `project.js`: versioned project record in IndexedDB, slice
-  registry, rev-based reconciliation with the localStorage settings mirror,
-  debounced autosave + pagehide flush, forward-compatible migrations, and the
-  automatic legacy (`cb.settings`/`cb.clips`) import. `core.js` IDB bumped to
-  v2 with a guarded upgrade; `main.js` awaits `project.load()` before
-  `applySettings()`. Full design in [persistence.md](persistence.md).
-  Verified locally: 42-case harness (legacy import, all three reconciliation
-  cases, forward-compat preservation, save-failure surfacing, debounce/flush),
-  a real-browser v1→v2 upgrade test (cached avatar survives, no
-  `ConstraintError`), and an end-to-end boot on a local server that imported
-  seeded legacy data and autosaved a live toggle change.
-  **`b89` follow-up:** the legacy-import toast was invisible on-device — the
-  load readout is itself a `toast()` sharing `#diag`, and the avatar mounts after
-  `project.load()`, so the readout always overwrote it. Save state now has its
-  own line in the readout via `project.summary()`.
-  **On-device check owed:** confirm the `b89` stamp and a
-  `project rev N · saved … · N clips` line in the readout (`migrated from
-  legacy:v0` on the first load only), and that settings/nameplate are unchanged.
+- **Project save system** — phases 1–2 shipped (`b88`–`b90`); design and
+  rationale in [persistence.md](persistence.md). `b88` added `project.js` (the
+  versioned record, slice registry, rev reconciliation, autosave, migrations,
+  legacy import) and the guarded IDB v2 upgrade; `b88`/`b89` are **confirmed on
+  the phone** (migration ran, `persisted` granted, autosave advancing `rev`).
+  `b89` added the readout line after the import toast turned out to be invisible
+  — the load readout is itself a `toast()` sharing `#diag` and always overwrote
+  it. `b90` (phase 2) moves the clip library onto a real `clips` slice owned by
+  `anim.js` that also carries **`clips.editKeys`** + name/loop, adds a `tuner`
+  slice, wires `saveSoon()` into every Tuner mutation, and adds the history ring
+  (`history()`/`restore()`).
 
-  *Phase 2 (next):* real `clips` slice owned by `anim.js` including
-  **`clips.editKeys`**, a `tuner` slice, and the autosave history ring — this is
-  what actually closes the "lose unsaved animation work on reload" gap.
-  *Phase 3:* Project card UI with export/import `.conbadge.json`.
+  **`b90` on-device check owed:** confirm the stamp; open the Tuner, capture a
+  couple of keyframes, reload **without** pressing Save, and confirm the draft
+  and the `N-key draft` readout come back. Both clips (`asdf`, `qwer`) should
+  survive the v1→v2 migration — that path is harness- and browser-tested against
+  the exact b89 state, but it's the one touching real clip data.
+
+  *Phase 3 (next):* Project card in the settings sheet — export/import
+  `.conbadge.json`, a restore-from-autosave list over the existing `history()`/
+  `restore()`, storage estimate, stale-export nudge.
 
 - **Tuner single-driver fix + menu redesign** (build `b87`, working tree, not
   yet confirmed on-device). Two changes:
@@ -68,10 +65,10 @@ moment it's resolved instead of letting it accumulate._
 
 ## Next priorities
 
-1. On-device confirmation of the b88 legacy migration (above), plus the b87
-   Tuner fixes (bone slider drives the avatar after a clip finishes / after a
-   scrub) and the b86 auto-fade play-dim path.
-2. Project save phase 2 — persist `clips.editKeys` + Tuner state, history ring.
+1. On-device confirmation of the b90 draft-survives-reload path (above), plus
+   the b87 Tuner fixes (bone slider drives the avatar after a clip finishes /
+   after a scrub) and the b86 auto-fade play-dim path.
+2. Project save phase 3 — export/import + Project card UI.
 3. Idle resting-pose tuning session (see above) once the user has time to
    dial it in.
 4. Resume normal animation-tuning cadence via the Animation Tuner as new

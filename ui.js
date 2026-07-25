@@ -3,6 +3,7 @@ import { THREE, S, rig, settings, saveSettings, camera, controls, hooks, toast,
          showOverlay, showError, idbGet, idbPut, resize, motion, enableMotion, disableMotion,
          LS, rand } from './core.js';
 import { CONFIG } from './config.js';
+import * as project from './project.js';
 import { mountVRM } from './avatar.js';
 import { frameCamera, currentView, applyView, saveCamOffset, frameTarget } from './camera.js';
 import { gestures, reactions, petting, GESTURE_LIST, tuner, tunerHold, tunerRelease, clips } from './anim.js';
@@ -580,6 +581,7 @@ const BG_PRESETS = [
         tuner.face[m] = parseFloat(ev.target.value);
         v.textContent = tuner.face[m].toFixed(2);
         readout();
+        project.saveSoon('tuner-face');
       });
     });
   }
@@ -618,6 +620,8 @@ const BG_PRESETS = [
       ov(cur())[i] = parseFloat(ev.target.value);
       el('tn-v-'+ax).textContent = (ov(cur())[i]>=0?' ':'') + ov(cur())[i].toFixed(2);
       readout();
+      // Debounced, so a slider drag writes once after it settles, not per frame.
+      project.saveSoon('tuner-pose');
     });
   });
   el('tn-bone').addEventListener('change', syncSliders);
@@ -634,8 +638,8 @@ const BG_PRESETS = [
   // Switching the held animation must also stop any clip playback, or both would
   // drive the pose at once — enterPose() re-holds the newly selected animation.
   el('tn-anim').addEventListener('change', enterPose);
-  el('tn-zero').addEventListener('click', ()=>{ if(cur()){ tuner.overrides[cur()] = [0,0,0,0]; refresh(); } });
-  el('tn-reset').addEventListener('click', ()=>{ tuner.overrides = {}; tuner.face = {}; buildFace(); refresh(); });
+  el('tn-zero').addEventListener('click', ()=>{ if(cur()){ tuner.overrides[cur()] = [0,0,0,0]; refresh(); project.saveSoon('tuner-zero'); } });
+  el('tn-reset').addEventListener('click', ()=>{ tuner.overrides = {}; tuner.face = {}; buildFace(); refresh(); project.saveSoon('tuner-reset'); });
 
   // Mirror every override on one side to the other. Across the sagittal plane
   // the world-aligned bones negate Y, Z and the axial twist; X carries over.
@@ -646,7 +650,7 @@ const BG_PRESETS = [
       const o = tuner.overrides[b]; if (!o) continue;
       tuner.overrides[to + b.slice(from.length)] = [o[0]||0, -(o[1]||0), -(o[2]||0), -(o[3]||0)];
     }
-    refresh();
+    refresh(); project.saveSoon('tuner-mirror');
   }
   el('tn-mirror-lr').addEventListener('click', ()=>mirror('left'));
   el('tn-mirror-rl').addEventListener('click', ()=>mirror('right'));
@@ -658,9 +662,12 @@ const BG_PRESETS = [
   });
 
   /* ---- Keyframes / clips (Phase 2: visual timeline) ---- */
-  const CLIP_KEY = 'cb.clips';
-  const loadLib = () => { try { return JSON.parse(localStorage.getItem(CLIP_KEY)) || {}; } catch(e){ return {}; } };
-  const saveLib = obj => { try { localStorage.setItem(CLIP_KEY, JSON.stringify(obj)); } catch(e){} };
+  // The clip library and the in-progress draft live on `clips` (anim.js), which
+  // owns their project slice — see docs/persistence.md. Every mutation below
+  // calls autosave(), so nothing here depends on an explicit Save to survive.
+  const loadLib = () => clips.library;
+  const saveLib = obj => { clips.library = obj; autosave('clip-library'); };
+  const autosave = reason => project.saveSoon(reason);
   let selKey = null;          // selected keyframe (by reference, survives re-sort)
   let drag = null;            // active pointer drag on the track
   let rafId = 0;             // playhead animation loop id
@@ -680,6 +687,8 @@ const BG_PRESETS = [
     face: { ...(k.face||{}) } });
   const clipDur = () => { const k = clips.editKeys; return Math.max(0.1, k.length ? k[k.length-1].t : 1); };
   const buildEditClip = () => ({ name: el('kf-name').value || 'clip', dur: clipDur(), loop: el('kf-loop').checked, keys: clips.editKeys });
+  // Mirror the name/loop fields onto `clips` so they persist with the draft.
+  const syncEditMeta = () => { clips.editName = el('kf-name').value; clips.editLoop = el('kf-loop').checked; };
   function timeFromX(cx){
     const r = el('kf-track').getBoundingClientRect();
     return +(Math.max(0, Math.min(1, (cx - r.left)/r.width)) * clipDur()).toFixed(3);
@@ -747,9 +756,13 @@ const BG_PRESETS = [
     clips.editKeys.push(key); clips.editKeys.sort((a,b)=>a.t-b.t);
     selKey = key;
     el('kf-time').value = (t + 0.5).toFixed(1);   // auto-advance for the next one
-    renderTrack();
+    renderTrack(); autosave('clip-capture');
     toast('Keyframe @ '+t.toFixed(2)+'s', 1200);
   });
+
+  // The draft clip's name/loop are part of the draft, not just form state.
+  el('kf-name').addEventListener('input', ()=>{ syncEditMeta(); autosave('clip-name'); });
+  el('kf-loop').addEventListener('change', ()=>{ syncEditMeta(); autosave('clip-loop'); });
 
   // Track pointer: tap/drag a marker to select/retime it; drag empty track to scrub.
   el('kf-track').addEventListener('pointerdown', ev=>{
@@ -773,7 +786,7 @@ const BG_PRESETS = [
     else if (selKey){ selKey.t = timeFromX(ev.clientX); clips.editKeys.sort((a,b)=>a.t-b.t); renderTrack(); }
   });
   el('kf-track').addEventListener('pointerup', ()=>{
-    if (drag && drag.mode === 'marker' && selKey) el('kf-time').value = selKey.t.toFixed(2);
+    if (drag && drag.mode === 'marker' && selKey){ el('kf-time').value = selKey.t.toFixed(2); autosave('clip-retime'); }
     drag = null;
   });
 
@@ -784,13 +797,13 @@ const BG_PRESETS = [
     for (const b in selKey.ov) tuner.overrides[b] = selKey.ov[b].slice(0,4);
     for (const m in selKey.face) tuner.face[m] = selKey.face[m];
     el('kf-time').value = selKey.t.toFixed(2);
-    buildBones(); buildFace(); refresh(); updatePlayBtn();
+    buildBones(); buildFace(); refresh(); updatePlayBtn(); autosave('clip-edit-key');
     toast('Editing key t='+selKey.t.toFixed(2)+' — adjust, then Update', 2200);
   });
   el('kf-update').addEventListener('click', ()=>{
     if (!selKey){ toast('Select a keyframe first', 1500); return; }
     const s = snapshot(); selKey.ov = s.ov; selKey.face = s.face;
-    renderTrack(); toast('Updated key t='+selKey.t.toFixed(2), 1400);
+    renderTrack(); autosave('clip-update'); toast('Updated key t='+selKey.t.toFixed(2), 1400);
   });
   el('kf-dup').addEventListener('click', ()=>{
     if (!selKey) return;
@@ -798,11 +811,12 @@ const BG_PRESETS = [
     const nt = +( next ? (selKey.t + next.t)/2 : selKey.t + 0.5 ).toFixed(3);
     const dup = cloneKey(selKey); dup.t = nt;
     clips.editKeys.push(dup); clips.editKeys.sort((a,b)=>a.t-b.t);
-    selKey = dup; renderTrack();
+    selKey = dup; renderTrack(); autosave('clip-dup');
   });
   el('kf-seldel').addEventListener('click', ()=>{
     if (!selKey) return;
-    clips.editKeys = clips.editKeys.filter(k => k !== selKey); selKey = null; renderTrack();
+    clips.editKeys = clips.editKeys.filter(k => k !== selKey); selKey = null;
+    renderTrack(); autosave('clip-delete');
   });
 
   el('kf-play').addEventListener('click', ()=>{
@@ -827,8 +841,8 @@ const BG_PRESETS = [
     const name = el('kf-lib').value; if (!name) return;
     const lib = loadLib(); const c = lib[name]; if (!c) return;
     clips.editKeys = (c.keys||[]).map(cloneKey);
-    el('kf-name').value = name; el('kf-loop').checked = !!c.loop;
-    selKey = null; renderTrack(); toast('Loaded "'+name+'"', 1500);
+    el('kf-name').value = name; el('kf-loop').checked = !!c.loop; syncEditMeta();
+    selKey = null; renderTrack(); autosave('clip-load'); toast('Loaded "'+name+'"', 1500);
   });
   el('kf-del').addEventListener('click', ()=>{
     const name = el('kf-lib').value; if (!name) return;
@@ -844,6 +858,10 @@ const BG_PRESETS = [
       buildBones();
       buildFace();
       buildLib();
+      // Restore the draft's name/loop — editKeys and tuner overrides are already
+      // live on `clips`/`tuner`, rehydrated from the project record at boot.
+      el('kf-name').value = clips.editName || '';
+      el('kf-loop').checked = !!clips.editLoop;
       renderTrack();
       updatePlayBtn();
       kfBar.style.display = 'block';

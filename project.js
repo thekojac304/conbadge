@@ -13,7 +13,7 @@
 // async without reworking boot). `cb.rev` pairs the mirror to a record revision
 // so the two can be reconciled instead of one silently clobbering the other.
 import { CONFIG } from './config.js';
-import { settings, hooks, idbGet, idbPut, toast } from './core.js';
+import { settings, hooks, idbGet, idbPut, idbDel, idbKeys, idbAll, toast } from './core.js';
 
 export const SCHEMA = 1;              // envelope format version
 const MAGIC        = 'conbadge.project';
@@ -108,22 +108,8 @@ register({
   },
 });
 
-// Clip library passthrough. ui.js still reads/writes localStorage['cb.clips']
-// directly (phase 2 moves it onto a real slice owned by anim.js), so capture it
-// verbatim each save — otherwise the record's copy would go stale the first time
-// a clip is saved, and phase 2 would restore the stale one over the fresh one.
-register({
-  id:'clips', version:1,
-  capture: ()=> { try { return JSON.parse(localStorage.getItem(LEGACY_CLIPS)) || {}; } catch(e){ return {}; } },
-  apply: data => {
-    // Only seed localStorage if it has nothing — never overwrite live clip work
-    // with a record copy during phase 1's passthrough arrangement.
-    try {
-      if (data && Object.keys(data).length && !localStorage.getItem(LEGACY_CLIPS))
-        localStorage.setItem(LEGACY_CLIPS, JSON.stringify(data));
-    } catch(e){}
-  },
-});
+// The `clips` and `tuner` slices are registered by anim.js, which owns that
+// state. project.js only needs to know cb.clips exists for the legacy import.
 
 /* ===========================================================================
    Record build / load / save
@@ -220,6 +206,11 @@ export async function load(){
         await save({ reason:'mirror-newer' });
       }
     }
+    // A migration only changed the IN-MEMORY state; persist it now rather than
+    // waiting for an unrelated event to trigger a save. Without this the record
+    // keeps its old shape (and the readout keeps reporting it) until something
+    // else happens to write — which is exactly how a stale clip count survived.
+    if (state.migratedFrom) await save({ reason:'migrate' });
   } else if (hasLegacy()){
     const n = await importLegacy();
     toast(`Imported your existing settings${n ? ` and ${n} clip${n===1?'':'s'}` : ''}`, 5000);
@@ -250,6 +241,7 @@ export async function save({ reason='manual' } = {}){
       state.rev = rec.rev; state.savedAt = rec.savedAt;
       state.lastError = null; state.lastSavedReason = reason;
       writeMirrorRev(rec.rev);          // pair the mirror to the revision just written
+      pushHistory(rec);                 // best-effort, never blocks or fails the save
       return true;
     } catch(e){
       // Quota, private mode, or a blocked upgrade. Never silent — the mirror is
@@ -260,6 +252,48 @@ export async function save({ reason='manual' } = {}){
     } finally { saving = null; }
   })();
   return saving;
+}
+
+/* ===========================================================================
+   Autosave history ring
+   =========================================================================== */
+// A rolling window of past revisions, so a bad edit is recoverable rather than
+// overwritten. One autosave slot can be clobbered by a bad state; a ring can't.
+// Deliberately best-effort and non-blocking: history must never be the reason a
+// real save fails or feels slow.
+export const HISTORY_MAX = 20;
+
+async function pushHistory(rec){
+  try {
+    const key = `${ACTIVE_ID}:${String(rec.rev).padStart(6,'0')}`;
+    await idbPut(key, { rev:rec.rev, savedAt:rec.savedAt, build:rec.app?.build,
+                        reason:state.lastSavedReason, rec }, 'history');
+    const keys = (await idbKeys('history')).filter(k => String(k).startsWith(ACTIVE_ID + ':')).sort();
+    for (const k of keys.slice(0, Math.max(0, keys.length - HISTORY_MAX))) await idbDel(k, 'history');
+  } catch(e){ /* history is a nicety; the record itself already landed */ }
+}
+
+// [{rev, savedAt, build, reason}] newest first — the restore list (phase 3 UI).
+export async function history(){
+  try {
+    const all = await idbAll('history');
+    return all.filter(h => h && h.rec && h.rec.id === ACTIVE_ID)
+              .sort((a,b)=> b.rev - a.rev)
+              .map(({rev, savedAt, build, reason}) => ({ rev, savedAt, build, reason }));
+  } catch(e){ return []; }
+}
+
+// Restore a past revision: applied to the live app AND saved forward as a new
+// revision, so restoring is itself undoable rather than rewriting history.
+export async function restore(rev){
+  const key = `${ACTIVE_ID}:${String(rev).padStart(6,'0')}`;
+  const entry = await idbGet(key, 'history');
+  if (!entry || !entry.rec) throw new Error(`No saved revision ${rev}`);
+  raw = migrateEnvelope(entry.rec);
+  for (const spec of slices.values()) applySlice(spec, raw.slices?.[spec.id]);
+  await save({ reason:`restore-${rev}` });
+  toast(`Restored revision ${rev}`, 4000);
+  return state;
 }
 
 // Debounced autosave. Every mutation path calls this; flush() forces it out.
@@ -302,8 +336,11 @@ export function summary(){
   if (state.lastError) return 'project SAVE FAILED — ' + (state.lastError.message || state.lastError);
   const t = state.savedAt
     ? new Date(state.savedAt).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '—';
-  const n = Object.keys(raw?.slices?.clips?.data || {}).length;
+  const c = raw?.slices?.clips?.data;
+  const n = Object.keys(c?.library || {}).length;
+  const k = (c?.editKeys || []).length;
   return `project rev ${state.rev} · saved ${t} · ${n} clip${n===1?'':'s'}`
+       + (k ? ` · ${k}-key draft` : '')
        + (state.persisted ? ' · persisted' : '')
        + (state.migratedFrom ? ` · migrated from ${state.migratedFrom}` : '');
 }

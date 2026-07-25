@@ -157,6 +157,12 @@ time).
 
 - **Capture** snapshots the current Tuner pose at the `t` field, drops a marker,
   and selects it (`t` auto-advances 0.5 for the next).
+- **Everything here autosaves.** Every mutation calls `project.saveSoon()`, and
+  the draft (keys + name + loop) plus the live slider pose are restored on the
+  next load — `setOpen(true)` rebuilds the panel from `clips`/`tuner`, which the
+  project record already rehydrated at boot. **Save** no longer protects work; it
+  only names a draft and files it in the library. See
+  [persistence.md](persistence.md).
 - **Track pointer handling** (one `pointerdown` on `#kf-track`, `touch-action:
   none` so a drag doesn't scroll the panel): pointerdown on a **marker** selects
   it and drag retimes it (re-sorts live); pointerdown on **empty track** starts
