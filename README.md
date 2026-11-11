@@ -166,3 +166,9 @@ Built with [three.js](https://threejs.org/) and
 [@pixiv/three-vrm](https://github.com/pixiv/three-vrm).
 
 Avatar files are yours and stay on your device.
+
+## License
+
+No license has been chosen yet, so all rights are reserved for now. [three.js](https://github.com/mrdoob/three.js) and
+[three-vrm](https://github.com/pixiv/three-vrm) (both MIT) are loaded from a CDN at run time and are not part of this
+repository. Avatar files belong to their creators and are never uploaded or bundled.
