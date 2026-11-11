@@ -17,7 +17,7 @@ It's a static site with no build step. Unzip it and put the folder on any HTTPS 
 [Netlify Drop](https://app.netlify.com/drop): drag the folder onto the page. Then open the URL on your phone and
 use **Add to Home Screen**. [HOSTING.md](HOSTING.md) has step-by-step instructions, including GitHub Pages.
 
-There is no hosted copy at the moment: GitHub Pages isn't enabled for this private repository.
+There is no hosted copy at the moment; GitHub Pages isn't enabled for this repository.
 
 ## Status
 
